@@ -11,10 +11,22 @@ Genie's own natural-language insights.
 > that RAISEs** + gated challenger/champion promotion. Here the "model" is an optimized
 > notebook and the "AUC guard" is the **equivalence + performance gate**.
 
+## How to run it
+
+Invoke the orchestrator skill on demand with `@` — no always-on project instructions needed:
+
+```
+@optimize-pipeline optimicemos el pipeline <job_name>
+```
+
+`optimize-pipeline` is self-contained (flow + human gates + audit contract + guardrails) and
+drives the sub-skills. We deliberately do **not** deploy `.assistant_instructions.md` to the
+workspace, so the optimizer engages only when you call it.
+
 ## How it works
 
 ```
-job_name (you) ─▶ Jobs API get job (JSON) ─▶ auto-fill opt_config
+@optimize-pipeline <job_name> ─▶ Jobs API get job (JSON) ─▶ auto-fill opt_config
    │
    ├─ per notebook, in DAG order:
    │    read code ─▶ detect source/target tables ─▶ flag non-determinism
@@ -60,6 +72,7 @@ step by step, cheapest check first:
 genie-code-pipeline-optimizer/
 ├── .assistant/
 │   └── skills/                 # Genie Code auto-loaded skills (Agent Skills spec)
+│       ├── optimize-pipeline/      # ← ENTRY POINT: @optimize-pipeline (orchestrator, self-contained)
 │       ├── perf-profile/           # diagnose the bottleneck notebook/step
 │       ├── detect-tables/          # Genie Code reads the notebook → source/target tables (no parser)
 │       ├── sandbox-setup/          # clone targets + pin inputs + remap writes
