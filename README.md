@@ -57,10 +57,11 @@ step by step, cheapest check first:
 ## Repo layout
 
 ```
-pipeline-optimization-factory/
+genie-code-pipeline-optimizer/
 ├── .assistant/
 │   └── skills/                 # Genie Code auto-loaded skills (Agent Skills spec)
 │       ├── perf-profile/           # diagnose the bottleneck notebook/step
+│       ├── detect-tables/          # Genie Code reads the notebook → source/target tables (no parser)
 │       ├── sandbox-setup/          # clone targets + pin inputs + remap writes
 │       ├── equivalence-check/      # counts → fingerprint → EXCEPT ALL, step-by-step
 │       ├── perf-benchmark/         # fair perf measurement (median of N)
