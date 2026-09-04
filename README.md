@@ -36,6 +36,7 @@ workspace, so the optimizer engages only when you call it.
    │    ─▶ run v2 end-to-end against clones
    │    ─▶ VALIDATE step-by-step: counts ─▶ column fingerprint ─▶ EXCEPT ALL (both ways)
    │       + perf (runtime / DBU, median of N)
+   │    ─▶ SECURITY REVIEW of v2 (late gate: secrets/injection/access/PII/sandbox/cost)
    │    ─▶ AUDIT every step + Genie insight
    │    ─▶ HUMAN approves promotion                         (GATE 2)
    ▼
@@ -78,7 +79,8 @@ genie-code-pipeline-optimizer/
 │       ├── sandbox-setup/          # clone targets + pin inputs + remap writes
 │       ├── equivalence-check/      # counts → fingerprint → EXCEPT ALL, step-by-step
 │       ├── perf-benchmark/         # fair perf measurement (median of N)
-│       └── optimize-notebook/      # generate v2 <ntb>_genie_opt_<ts>  (HITL)
+│       ├── optimize-notebook/      # generate v2 <ntb>_genie_opt_<ts>  (HITL)
+│       └── security-review/        # late security gate before promotion
 ├── .assistant_instructions.md  # audit contract + import-don't-reimplement directive
 ├── config/
 │   └── example_job.yaml        # opt_config shape (auto-seeded from the job JSON)

@@ -38,13 +38,16 @@ Show the drafted config (notebooks + compute + sandbox_catalog) and confirm the 
 7. **`@equivalence-check`** — counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step,
    with `epsilon`. HARD gate: any divergence → `validate=failed`, write insight, STOP (no promotion).
 8. **`@perf-benchmark`** — median of N runs; promote only if equivalent AND faster by `min_gain`.
-9. **GATE 2: wait for human approval** before promoting (PR/DAB back into the job).
+9. **`@security-review`** — LATE security gate on the v2 (secrets, injection, access/PII broadening,
+   writes outside the sandbox, unsafe UDF/external calls, cost blowups). Any finding → STOP, no promotion.
+10. **GATE 2: wait for human approval** before promoting (PR/DAB back into the job).
 
 ## Audit contract (every step)
-`audit_log()` with started → terminal (succeeded, or failed + re-raise). Record job, notebook,
-step, status, change_type, equivalence (method + rows compared + result), perf (runtime/DBU/
-shuffle/spill/gate), and a short NL **insight** (the *why*). Insight on every equivalence result
-and every failure.
+`audit_log()` with started → terminal (succeeded, or failed + re-raise). Steps: detect_tables,
+perf_profile, generate_v2, sandbox_setup, equivalence, perf_benchmark, security_review, promote.
+Record job, notebook, step, status, change_type, equivalence (method + rows compared + result),
+perf (runtime/DBU/shuffle/spill/gate), and a short NL **insight** (the *why*). Insight on every
+equivalence result, every security finding, and every failure.
 
 ## Guardrails
 - The baseline is the reference truth; prove the candidate equivalent **to it**.

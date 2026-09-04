@@ -17,6 +17,7 @@
 | Isolation | `sandbox-setup`: shallow CLONE of targets (with data), time-travel-pinned inputs, writes remapped to `sandbox_catalog` |
 | Correctness | `equivalence-check`: counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step, epsilon tolerance |
 | Performance | `perf-benchmark`: same compute, cache control, median of N, DBU/shuffle/spill |
+| Security | `security-review`: late gate on v2 — secrets, injection, access/PII broadening, sandbox containment, unsafe calls, cost blowups |
 | Promotion | champion (v1) / challenger (v2); promote only if equivalent AND faster by `min_gain`; human GATE 2 |
 | Governance | `optimization_audit` (append-only) + `insight` + Optimization Command Center dashboard |
 
