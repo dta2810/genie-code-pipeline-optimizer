@@ -82,12 +82,15 @@ genie-code-pipeline-optimizer/
 ├── .assistant_instructions.md  # audit contract + import-don't-reimplement directive
 ├── config/
 │   └── example_job.yaml        # opt_config shape (auto-seeded from the job JSON)
-├── lib/                        # importable harness (settings/audit/config/sandbox/equivalence)
-├── sql/
-│   └── tables.sql              # optimization_audit + opt_config DDL
+├── lib/                        # importable harness (settings/audit/config/sandbox/equivalence/perf)
+├── sql/                        # tables.sql · config_function.sql · governance_views.sql
+├── deploy/
+│   └── 00_deploy.py            # provisions the UC assets (schema/tables/function/views)
 └── docs/
     └── architecture.md
 ```
+
+Each phase skill has `scripts/` that wrap the `lib/` harness (imported, not reimplemented).
 
 ## Deploy skills + instructions
 
