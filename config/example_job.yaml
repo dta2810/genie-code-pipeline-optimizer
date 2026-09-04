@@ -1,0 +1,36 @@
+# opt_config — auto-seeded by Genie Code from the job JSON (Jobs API), then human-reviewed.
+# One file per job. Notebooks are listed in DAG order.
+
+job_name: <given by the user>
+job_id: <from Jobs API>
+
+# Sandbox: all clones + remapped writes land here. Prod is never touched.
+sandbox_catalog: opt_sandbox
+
+# Factory schema: audit table + config + governance views.
+factory_schema: <catalog>.pipeline_opt_factory
+
+# Compute used for baseline vs candidate (must match to compare perf fairly).
+compute:
+  cluster_id: <cluster or warehouse used by the job>
+  dbr: <e.g. 16.4 ML>
+
+# Where v2 notebooks are written.
+optimized_folder: /Workspace/Users/<you>/pipeline_opt/<job_name>
+
+# Global defaults (overridable per notebook).
+defaults:
+  epsilon: 1.0e-6          # tolerance for DECIMAL/DOUBLE equivalence
+  min_gain: 0.20           # candidate must be >=20% faster to promote
+  benchmark_runs: 3        # median of N
+  validation_tier: sampled # golden | sampled | full (final gate = full)
+
+notebooks:
+  - path: /Workspace/.../etl_step_f
+    order: 6
+    operation: merge                       # insert | merge | update | ctas | ...
+    source_tables: [prod.silver.x, prod.silver.y]   # pinned via time-travel
+    target_tables: [prod.gold.z]                     # shallow-cloned (with data) to sandbox
+    equivalence_keys: [id]                 # optional business key for row-level diff
+    nondeterministic: false                # set true if timestamps/random/unordered detected
+    status: pending                        # pending | proposed | approved | validated | promoted | blocked
