@@ -11,11 +11,18 @@ SANDBOX_CATALOG = _env("PO_SANDBOX_CATALOG", "opt_sandbox")
 # Factory schema: audit table + config + governance views.
 FACTORY_CATALOG = _env("PO_FACTORY_CATALOG", "main")
 FACTORY_SCHEMA = _env("PO_FACTORY_SCHEMA", "pipeline_opt_factory")
+# Workspace home: where the Genie Code assets live (skills, lib, deploy, sql, v2 notebooks).
+WORKSPACE_HOME = _env("PO_WORKSPACE_HOME", "/Workspace/Users/<you>/genie_code_optimizer")
 
 
 def factory_fqn(name: str) -> str:
     """Fully-qualified name inside the factory schema."""
     return f"{FACTORY_CATALOG}.{FACTORY_SCHEMA}.{name}"
+
+
+def optimized_folder() -> str:
+    """Workspace folder for generated v2 notebooks (derives from WORKSPACE_HOME)."""
+    return f"{WORKSPACE_HOME.rstrip('/')}/optimized"
 
 
 def sandbox_fqn(schema: str, table: str) -> str:

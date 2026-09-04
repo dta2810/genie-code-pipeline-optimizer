@@ -4,7 +4,10 @@
 job_name: <given by the user>
 job_id: <from Jobs API>
 
-# Sandbox: all clones + remapped writes land here. Prod is never touched.
+# Where ALL assets live (skills, lib, deploy, sql, generated v2 notebooks). Set via PO_WORKSPACE_HOME.
+workspace_home: /Workspace/Users/<you>/genie_code_optimizer
+
+# Sandbox: all clones + isolated runs land here. Prod is never touched.
 sandbox_catalog: opt_sandbox
 
 # Factory schema: audit table + config + governance views.
@@ -15,8 +18,8 @@ compute:
   cluster_id: <cluster or warehouse used by the job>
   dbr: <e.g. 16.4 ML>
 
-# Where v2 notebooks are written.
-optimized_folder: /Workspace/Users/<you>/pipeline_opt/<job_name>
+# Where v2 notebooks are written (derives from workspace_home by default).
+optimized_folder: /Workspace/Users/<you>/genie_code_optimizer/optimized/<job_name>
 
 # Global defaults (overridable per notebook).
 defaults:

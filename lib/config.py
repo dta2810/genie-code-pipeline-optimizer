@@ -5,6 +5,7 @@ Per-notebook source/target tables + operation are filled later by the detect-tab
 """
 from databricks.sdk import WorkspaceClient
 
+from . import settings
 from .settings import SANDBOX_CATALOG, factory_fqn
 
 CONFIG_TABLE = factory_fqn("opt_config")
@@ -48,7 +49,7 @@ def _compute_of(settings) -> dict:
 
 
 def bootstrap_from_job(job_name: str, *, sandbox_catalog: str = SANDBOX_CATALOG,
-                       optimized_folder: str | None = None, user: str = "<you>") -> dict:
+                       optimized_folder: str | None = None) -> dict:
     """job_name -> Jobs API -> draft opt_config (notebooks in DAG order, tables left for detect-tables)."""
     w = WorkspaceClient()
     job = _resolve_job(w, job_name)
@@ -75,7 +76,7 @@ def bootstrap_from_job(job_name: str, *, sandbox_catalog: str = SANDBOX_CATALOG,
         "job_name": s.name,
         "job_id": str(job.job_id),
         "sandbox_catalog": sandbox_catalog,
-        "optimized_folder": optimized_folder or f"/Workspace/Users/{user}/pipeline_opt/{s.name}",
+        "optimized_folder": optimized_folder or f"{settings.optimized_folder()}/{s.name}",
         "compute": _compute_of(s),
         "defaults": dict(DEFAULTS),
         "notebooks": notebooks,

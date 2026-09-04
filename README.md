@@ -94,15 +94,16 @@ Each phase skill has `scripts/` that wrap the `lib/` harness (imported, not reim
 
 ## Deploy skills + instructions
 
-Skills follow the **Agent Skills spec** (frontmatter `name`/`description`), so they
-co-deploy with the official [databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills):
+All assets live under one configurable workspace folder — `PO_WORKSPACE_HOME`
+(e.g. `/Workspace/Users/<you>/genie_code_optimizer`). Skills follow the **Agent Skills spec**
+(frontmatter `name`/`description`), co-deployable with the official
+[databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills).
 
 ```bash
-# Genie Code auto-load (workspace .assistant/skills)
-databricks workspace import-dir .assistant "/Workspace/Users/<you>/.assistant" --overwrite
-
-# or co-install alongside the official Databricks skills
-databricks aitools install
+cp deploy/env.example.sh deploy/env.sh     # fill in PO_WORKSPACE_HOME + factory schema + profile
+source deploy/env.sh
+bash deploy/sync_assets.sh                  # push skills + lib + deploy + sql to $PO_WORKSPACE_HOME
+# then run deploy/00_deploy.py in the workspace to provision the UC assets
 ```
 
 ## Status

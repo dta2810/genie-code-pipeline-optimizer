@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
+deploy/env.sh
 .DS_Store
 *.egg-info/
 .ipynb_checkpoints/
