@@ -103,3 +103,42 @@ def load_config(spark, job_name: str) -> list[dict]:
     """Read the persisted opt_config rows for a job (DAG order)."""
     df = spark.sql(f"SELECT * FROM {CONFIG_TABLE} WHERE job_name = '{job_name}' ORDER BY dag_order")
     return [r.asDict(recursive=True) for r in df.collect()]
+
+
+def _matches(n: dict, pick) -> bool:
+    """A pick is a dag_order int, or a substring of the notebook path (name works)."""
+    if isinstance(pick, bool):
+        return False
+    if isinstance(pick, int):
+        return n["dag_order"] == pick
+    return str(pick) in n["notebook_path"]
+
+
+def select_notebooks(cfg: dict, picks=None) -> dict:
+    """Choose which notebooks to optimize THIS run — the gradual, one-step-at-a-time control.
+
+    `picks` = a dag_order int, a path/name substring, or a list of them; `None`/`"all"` selects
+    every notebook. Selected notebooks are left `pending` (they will run); the rest become
+    `skipped`. Terminal states from earlier runs (`promoted`, `blocked`) are never disturbed, so
+    the flow is resumable: run notebook 5 today, notebook 0 next session. Mutates and returns cfg.
+    """
+    nb = cfg["notebooks"]
+    if picks in (None, "all", ["all"]):
+        chosen = set(range(len(nb)))
+    else:
+        picks = picks if isinstance(picks, (list, tuple)) else [picks]
+        chosen = {i for i, n in enumerate(nb) if any(_matches(n, p) for p in picks)}
+    if not chosen:
+        raise ValueError(f"No notebook matched picks={picks!r}; available: "
+                         f"{[(n['dag_order'], n['notebook_path']) for n in nb]}")
+    for i, n in enumerate(nb):
+        if n["status"] in ("promoted", "blocked"):  # keep resolved history
+            continue
+        n["status"] = "pending" if i in chosen else "skipped"
+    return cfg
+
+
+def pending_notebooks(cfg: dict) -> list[dict]:
+    """Selected notebooks still to process, in DAG order (status == 'pending')."""
+    return sorted((n for n in cfg["notebooks"] if n["status"] == "pending"),
+                  key=lambda x: x["dag_order"])

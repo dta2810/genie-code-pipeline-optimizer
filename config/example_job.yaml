@@ -37,4 +37,5 @@ notebooks:
     target_tables: [prod.gold.z]                     # shallow-cloned (with data) to sandbox
     equivalence_keys: [id]                 # optional business key for row-level diff
     nondeterministic: false                # set true if timestamps/random/unordered detected
-    status: pending                        # pending | proposed | approved | validated | promoted | blocked
+    # Set by select_notebooks each run: selected -> pending, the rest -> skipped (resumable).
+    status: pending                        # pending | skipped | proposed | approved | validated | promoted | blocked

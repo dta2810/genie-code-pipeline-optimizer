@@ -16,13 +16,22 @@ sub-skills' `scripts/` — do NOT reimplement their logic inline.
 
 **0. Bootstrap config.** From the user's job name:
 ```python
-from lib.config import bootstrap_from_job, sync_config
+from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
-sync_config(spark, cfg)                  # persist to opt_config
 ```
-Show the drafted config (notebooks + compute + sandbox_schema) and confirm the job with the user.
+Show the drafted config (notebooks + compute + sandbox_schema) and confirm the **job** with the user.
 
-**Per notebook, in DAG order:**
+**0b. SELECT which notebooks to optimize this run** — the gradual, one-step-at-a-time control.
+Present the notebooks as a numbered list (`dag_order` · path · operation) and ask the user which to
+optimize now. Optimizing all at once is discouraged; steer toward one (or a small set) to start.
+```python
+select_notebooks(cfg, picks=5)           # a dag_order, a name substring, or a list; None = all
+sync_config(spark, cfg)                   # persist: selected -> pending, the rest -> skipped
+```
+Selected notebooks are `pending`; the rest are `skipped` (persisted, so a later run can pick them
+up — `promoted`/`blocked` history is never overwritten).
+
+**For each SELECTED notebook (`pending_notebooks(cfg)`), in DAG order:**
 
 1. **`@detect-tables`** — read the notebook, reason out `source_tables` (to pin) + `target_tables`
    (to clone) + `operation`, resolve dynamic names, flag non-determinism. Write them into the
