@@ -9,6 +9,19 @@ Do NOT reimplement techniques inline. `perf-profile` maps a measured symptom to 
 name here; `optimize-notebook` loads the matching `resources/<technique>.md` and applies its
 recipe. Read one file, not all six.
 
+## This catalog is a STARTING SET, not a cage
+
+These six are the curated, pre-vetted techniques — but you are **encouraged to also draw on your
+other Databricks skills** (`writing-sql`, `table-optimization`, `data-modification`,
+`performance-tuning`, `spark-config-reference`) and the docs whenever they offer a **valid**
+optimization for the notebook at hand. Explore broadly — a better technique from another skill is
+welcome. Two things always hold, no matter the source:
+1. **The FORBIDDEN protocol rule below applies to every proposal** (no reader/writer/feature bumps).
+2. **Everything passes the same gates** (protocol → equivalence → perf → security → audit), so it is
+   SAFE to explore: an unsafe idea is blocked at the sandbox, never at the cost of your creativity.
+When you use an out-of-catalog technique, name its source skill in the GATE 1 proposal and record it
+in the audit `change_type` so the trail shows where it came from.
+
 ## Symptom → technique
 
 | Measured symptom (from perf-profile) | Technique | Resource file |

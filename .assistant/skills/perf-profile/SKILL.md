@@ -17,8 +17,10 @@ Steps:
 2. Within the notebook, find the slowest operation/step (the query profile pinpoints it).
 3. Attribute the cause via the query profile / `EXPLAIN` — but report **measured runtime**, not
    the plan (EXPLAIN != runtime). Map each cause to a technique using the `optimization-catalog`
-   symptom→technique table; name the technique(s) in the suggestion so optimize-notebook can load
-   the matching recipe.
+   symptom→technique table — AND, when they fit better, techniques from your other Databricks skills
+   (`writing-sql`, `table-optimization`, `data-modification`, `performance-tuning`). The catalog is a
+   starting set, not a limit. Name the technique(s) and their source in the suggestion so
+   optimize-notebook can apply them. (The forbidden protocol rule + gates apply to every source.)
 4. Write the bottleneck profile to the factory schema + `audit_log(step="perf_profile", insight=...)`.
 
 Output: a structured bottleneck profile + a short NL insight (where and why it is slow).

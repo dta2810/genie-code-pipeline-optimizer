@@ -12,8 +12,11 @@ Inputs: original notebook, approved suggestions (each names a technique), `optim
 
 Steps:
 1. Copy the original into `<optimized_folder>/<ntb>_genie_opt_<timestamp>` — never edit the source.
-2. For each approved technique, load ONLY its `optimization-catalog/resources/<technique>.md` and
-   apply that recipe — do NOT reimplement the transformation inline.
+2. For each approved technique, apply its recipe: from `optimization-catalog/resources/<technique>.md`
+   if it's a catalog technique, or from the relevant Databricks skill (`writing-sql`,
+   `table-optimization`, `data-modification`, `performance-tuning`) if it came from there. The
+   catalog is a starting set, not a limit — use the best valid technique for the notebook, whatever
+   its source. Don't reimplement a documented recipe inline; follow the skill's guidance.
 3. Apply one transformation per logical step, keeping intermediate outputs materializable for
    step-by-step equivalence. Honor the technique's equivalence-risk tier (semantics-preserving
    rewrites like de-UDF/salting demand a full, unsampled gate downstream).
