@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 deploy/env.sh
+.databricks/
 .DS_Store
 *.egg-info/
 .ipynb_checkpoints/

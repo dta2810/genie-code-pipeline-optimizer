@@ -101,6 +101,21 @@ All assets live under one configurable workspace folder — `PO_WORKSPACE_HOME`
 (frontmatter `name`/`description`), co-deployable with the official
 [databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills).
 
+### Deploy with DABs (recommended)
+
+Locations are bundle variables, overridden per target in `databricks.yml` — no hand-editing.
+
+```bash
+databricks bundle validate --strict -t latam
+databricks bundle deploy -t latam                  # syncs skills + lib + sql + deploy to the workspace home
+databricks bundle run provision_factory -t latam   # creates schema + tables + views + get_opt_config
+```
+
+Add a target for a new environment by copying the `latam` block in `databricks.yml` and setting its
+`factory_catalog` / `factory_schema` / `sandbox_schema` / `profile`.
+
+### Deploy with the shell script (fallback)
+
 ```bash
 cp deploy/env.example.sh deploy/env.sh     # fill in PO_WORKSPACE_HOME + factory schema + profile
 source deploy/env.sh

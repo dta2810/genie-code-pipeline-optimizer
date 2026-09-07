@@ -1,0 +1,44 @@
+# Declarative Automation Bundle for the Pipeline Optimization Factory.
+# Deploys the Genie Code assets (.assistant skills, lib, sql, deploy) to the workspace and
+# provisions the factory UC schema via the provision_factory job.
+#
+#   databricks bundle validate --strict -t latam
+#   databricks bundle deploy -t latam          # syncs assets to the workspace home
+#   databricks bundle run provision_factory -t latam   # creates schema + tables + views + fn
+#
+# Locations are bundle variables, overridden per target — no more editing env.sh by hand.
+bundle:
+  name: genie-code-pipeline-optimizer
+
+include:
+  - resources/*.yml
+
+variables:
+  factory_catalog:
+    description: UC catalog that holds the factory schema (opt_config, optimization_audit, views).
+    default: main
+  factory_schema:
+    description: Factory schema name.
+    default: pipeline_opt_factory
+  sandbox_schema:
+    description: Dedicated sandbox schema (created lazily inside each target's own catalog).
+    default: pipeline_opt_sandbox
+  create_catalogs:
+    description: Create the factory catalog (false if it exists or you lack CREATE CATALOG).
+    default: "false"
+
+targets:
+  # David's LATAM workspace — the current deploy target (tables live in main_david_thomas).
+  latam:
+    default: true
+    mode: development
+    workspace:
+      profile: LATAM
+      # All assets live under one predictable home so Genie Code auto-loads .assistant/skills
+      # and script imports resolve. Synced files land under <root_path>/files/.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/genie_code_optimizer
+    variables:
+      factory_catalog: main_david_thomas
+      factory_schema: genie_optimizer_v1
+      sandbox_schema: genie_optimizer_v1_sandbox
+      create_catalogs: "false"
