@@ -66,12 +66,33 @@ up — `promoted`/`blocked` history is never overwritten).
 6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the same compute.
 7. **`@equivalence-check`** — counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step,
    with `epsilon`. HARD gate: any divergence → `validate=failed`, write insight, STOP (no promotion).
-8. **`@perf-benchmark`** — median of N runs; promote only if equivalent AND faster by `min_gain`.
+8. **`@perf-benchmark`** — median of N runs; report the gain vs `min_gain`. A gain below `min_gain`
+   is a **signal to the human, not an automatic block** — surface it clearly. Equivalence is the
+   hard gate; perf is advisory. If the human promotes a below-threshold candidate for correctness or
+   maintainability (not raw speed), say so explicitly and record that rationale in the audit insight.
 9. **`@security-review`** — LATE security gate on the v2 (secrets, injection, access/PII broadening,
    writes outside the sandbox, unsafe UDF/external calls, cost blowups). Any finding → STOP, no promotion.
-10. **GATE 2: wait for human approval** before promoting (PR/DAB back into the job).
+10. **NO-AUDIT-NO-PROMOTE gate.** Before offering promotion, prove the run was actually recorded:
+    ```python
+    from lib.audit import assert_audited, audit_trail
+    assert_audited(spark, job=job_name, notebook=notebook_path)   # RAISES if the trail is missing
+    display(spark.createDataFrame(audit_trail(spark, job=job_name, notebook=notebook_path)))
+    ```
+    If this raises, the harness was bypassed (steps run inline) — re-run through the wrappers. Show
+    the trail to the human as evidence.
+11. **GATE 2: wait for human approval**, then promote via the Jobs JSON (this iteration: NO PR/DAB):
+    ```python
+    from lib.promote import promote_notebook
+    promote_notebook(job_id, task_key, v2_path, new_job=True)   # new job; original untouched
+    ```
+    `new_job=True` clones the job with the task repointed to the v2 (rollback = delete the new job);
+    `new_job=False` updates the job in place. Record the outcome with `audit_log(step="promote", ...)`.
 
 ## Audit contract (every step)
+**Use the harness wrappers — do NOT reimplement their logic inline.** The wrappers (`lib/` +
+`scripts/`) are what write `opt_config` (`sync_config` after selection) and append the audit trail
+(`audit_step`/`audit_log`). If you run the steps with your own inline code, `opt_config` and
+`optimization_audit` stay EMPTY and the NO-AUDIT-NO-PROMOTE gate (step 10) will refuse to promote.
 `audit_log()` with started → terminal (succeeded, or failed + re-raise). Steps: detect_tables,
 perf_profile, generate_v2, sandbox_setup, equivalence, perf_benchmark, security_review, promote.
 Record job, notebook, step, status, change_type, equivalence (method + rows compared + result),

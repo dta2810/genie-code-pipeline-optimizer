@@ -48,6 +48,36 @@ def audit_log(spark, *, job, notebook, step, status, change_type=None,
         settings.factory_fqn("optimization_audit"))
 
 
+def audit_trail(spark, *, job, notebook=None) -> list[dict]:
+    """Read the audit events for a job (optionally one notebook), oldest first."""
+    tbl = settings.factory_fqn("optimization_audit")
+    where = f"job = '{job}'" + (f" AND notebook = '{notebook}'" if notebook else "")
+    rows = spark.sql(f"SELECT step, status, event_ts, insight FROM {tbl} "
+                     f"WHERE {where} ORDER BY event_ts").collect()
+    return [r.asDict() for r in rows]
+
+
+# Steps that must be recorded before a candidate may be promoted.
+REQUIRED_STEPS = ("detect_tables", "perf_profile", "generate_v2", "sandbox_setup",
+                  "equivalence", "perf_benchmark", "security_review")
+
+
+def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
+    """No-audit-no-promote gate: every required step must have a `succeeded` audit row for this
+    job+notebook, or promotion is REFUSED. Makes an un-audited run (harness bypassed / reimplemented
+    inline) impossible to promote past. Call right before GATE 2.
+    """
+    trail = audit_trail(spark, job=job, notebook=notebook)
+    ok = {r["step"] for r in trail if r["status"] == "succeeded"}
+    missing = [s for s in required if s not in ok]
+    if missing:
+        raise ValueError(
+            f"Promotion BLOCKED: no `succeeded` audit trail for {missing} on {job}/{notebook}. "
+            "The harness (audit_step/audit_log) was not used — re-run the flow through the "
+            "wrappers so every step is recorded, then promote.")
+    return {"audited": True, "steps_recorded": sorted(ok), "events": len(trail)}
+
+
 @contextmanager
 def audit_step(spark, *, job, notebook, step, **terminal):
     """Wrap a step: log started (minimal), then succeeded (+terminal fields) — or failed + re-raise."""
