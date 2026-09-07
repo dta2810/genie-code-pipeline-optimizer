@@ -3,9 +3,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from .settings import factory_fqn
-
-AUDIT_TABLE = factory_fqn("optimization_audit")
+from . import settings
 
 
 def _str_map(d):
@@ -46,7 +44,8 @@ def audit_log(spark, *, job, notebook, step, status, change_type=None,
         "equivalence": _str_map(equivalence), "perf": _str_map(perf),
         "notebook_path": notebook_path, "insight": insight,
     }
-    spark.createDataFrame([row], schema).write.mode("append").saveAsTable(AUDIT_TABLE)
+    spark.createDataFrame([row], schema).write.mode("append").saveAsTable(
+        settings.factory_fqn("optimization_audit"))
 
 
 @contextmanager

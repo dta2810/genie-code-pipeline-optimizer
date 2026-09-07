@@ -1,7 +1,8 @@
 """Isolated sandbox: pin inputs, shallow-clone targets, remap writes. Never touch prod."""
 import re
 
-from .settings import SANDBOX_SCHEMA, sandbox_fqn
+from . import settings
+from .settings import sandbox_fqn
 
 
 def _parts(fqn: str):
@@ -30,7 +31,7 @@ def clone_targets(spark, target_tables: list[str], suffix: str = "") -> dict[str
     for t in target_tables:
         catalog, schema, table = _parts(t)
         dst = sandbox_fqn(catalog, schema, f"{table}{suffix}")
-        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{SANDBOX_SCHEMA}")
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{settings.SANDBOX_SCHEMA}")
         spark.sql(f"CREATE OR REPLACE TABLE {dst} SHALLOW CLONE {t}")
         mapping[t] = dst
     return mapping

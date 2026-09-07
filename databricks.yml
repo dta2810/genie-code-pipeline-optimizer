@@ -34,9 +34,11 @@ targets:
     mode: development
     workspace:
       profile: LATAM
-      # All assets live under one predictable home so Genie Code auto-loads .assistant/skills
-      # and script imports resolve. Synced files land under <root_path>/files/.
-      root_path: /Workspace/Users/${workspace.current_user.userName}/genie_code_optimizer
+      # Bundle state/artifacts live under a managed .bundle path; the CODE (file_path) lands
+      # directly at the genie_code_optimizer home — matching PO_WORKSPACE_HOME, no /files subdir —
+      # so Genie Code auto-loads .assistant/skills and script imports + optimized_folder resolve.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}
+      file_path: /Workspace/Users/${workspace.current_user.userName}/genie_code_optimizer
     variables:
       factory_catalog: main_david_thomas
       factory_schema: genie_optimizer_v1

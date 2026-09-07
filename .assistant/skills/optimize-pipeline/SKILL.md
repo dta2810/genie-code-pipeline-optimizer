@@ -14,8 +14,13 @@ sub-skills' `scripts/` — do NOT reimplement their logic inline.
 
 ## Flow
 
-**0. Bootstrap config.** From the user's job name:
+**0. Bootstrap config.** First point the harness at THIS deployment's factory (env vars set on a
+laptop do not reach the Databricks runtime), then draft the config from the job name:
 ```python
+from lib import settings
+settings.configure(spark=spark)          # loads factory catalog/schema/home written by provision
+# (or pass them explicitly: settings.configure(factory_catalog=..., factory_schema=...))
+
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 from lib.perf import rank_notebooks
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order

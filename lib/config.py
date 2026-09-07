@@ -6,9 +6,11 @@ Per-notebook source/target tables + operation are filled later by the detect-tab
 from databricks.sdk import WorkspaceClient
 
 from . import settings
-from .settings import SANDBOX_SCHEMA, factory_fqn
 
-CONFIG_TABLE = factory_fqn("opt_config")
+
+def _config_table() -> str:
+    """opt_config FQN, resolved at call time so settings.configure() takes effect."""
+    return settings.factory_fqn("opt_config")
 
 DEFAULTS = {"epsilon": 1e-6, "min_gain": 0.20, "benchmark_runs": 3, "validation_tier": "sampled"}
 
@@ -48,9 +50,10 @@ def _compute_of(settings) -> dict:
     return {}
 
 
-def bootstrap_from_job(job_name: str, *, sandbox_schema: str = SANDBOX_SCHEMA,
+def bootstrap_from_job(job_name: str, *, sandbox_schema: str | None = None,
                        optimized_folder: str | None = None) -> dict:
     """job_name -> Jobs API -> draft opt_config (notebooks in DAG order, tables left for detect-tables)."""
+    sandbox_schema = sandbox_schema or settings.SANDBOX_SCHEMA
     w = WorkspaceClient()
     job = _resolve_job(w, job_name)
     s = job.settings
@@ -97,13 +100,14 @@ def sync_config(spark, cfg: dict) -> None:
         "min_gain": d["min_gain"], "benchmark_runs": d["benchmark_runs"],
         "nondeterministic": n["nondeterministic"], "status": n["status"],
     } for n in nb]
-    spark.sql(f"DELETE FROM {CONFIG_TABLE} WHERE job_name = '{cfg['job_name']}'")
-    spark.createDataFrame(rows).write.mode("append").saveAsTable(CONFIG_TABLE)
+    table = _config_table()
+    spark.sql(f"DELETE FROM {table} WHERE job_name = '{cfg['job_name']}'")
+    spark.createDataFrame(rows).write.mode("append").saveAsTable(table)
 
 
 def load_config(spark, job_name: str) -> list[dict]:
     """Read the persisted opt_config rows for a job (DAG order)."""
-    df = spark.sql(f"SELECT * FROM {CONFIG_TABLE} WHERE job_name = '{job_name}' ORDER BY dag_order")
+    df = spark.sql(f"SELECT * FROM {_config_table()} WHERE job_name = '{job_name}' ORDER BY dag_order")
     return [r.asDict(recursive=True) for r in df.collect()]
 
 
