@@ -1,6 +1,7 @@
 """Provision the factory UC assets. Param-driven with defaults; callable or via 00_deploy widgets."""
 import json
 import os
+import re
 
 DEFAULTS = {
     "factory_catalog": "main",
@@ -15,6 +16,15 @@ SQL_FILES = ["tables.sql", "config_function.sql", "governance_views.sql"]
 
 def _sql_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sql"))
+
+
+def _split_statements(sql: str) -> list[str]:
+    """Split a .sql file into executable statements. Strips `--` line comments FIRST so a
+    semicolon inside a comment never splits a statement (our DDL has no `--` inside literals),
+    then splits on `;`.
+    """
+    no_comments = re.sub(r"--[^\n]*", "", sql)
+    return [s.strip() for s in no_comments.split(";") if s.strip()]
 
 
 def provision(spark, *,
@@ -40,7 +50,7 @@ def provision(spark, *,
         with open(os.path.join(sql_dir, fn)) as f:
             body = (f.read().replace("{{catalog}}", factory_catalog)
                             .replace("{{schema}}", factory_schema))
-        for stmt in [s.strip() for s in body.split(";") if s.strip()]:
+        for stmt in _split_statements(body):
             spark.sql(stmt)
         print(f"✓ {fn}")
 

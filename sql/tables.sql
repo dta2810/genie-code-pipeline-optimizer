@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.opt_config (
   status             STRING           -- pending|skipped|proposed|approved|validated|promoted|blocked
 ) USING DELTA;
 
--- optimization_audit: append-only trail; started -> terminal per step; NL insight.
+-- optimization_audit: append-only trail, started -> terminal per step, with an NL insight.
 CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.optimization_audit (
   audit_id        STRING,
   event_ts        TIMESTAMP,
