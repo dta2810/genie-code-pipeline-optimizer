@@ -14,7 +14,7 @@ from provision import DEFAULTS, provision
 
 dbutils.widgets.text("factory_catalog", DEFAULTS["factory_catalog"], "Factory catalog")
 dbutils.widgets.text("factory_schema", DEFAULTS["factory_schema"], "Factory schema")
-dbutils.widgets.text("sandbox_catalog", DEFAULTS["sandbox_catalog"], "Sandbox catalog")
+dbutils.widgets.text("sandbox_schema", DEFAULTS["sandbox_schema"], "Sandbox schema")
 dbutils.widgets.dropdown("create_catalogs", "true", ["true", "false"], "Create catalogs?")
 
 # COMMAND ----------
@@ -23,7 +23,7 @@ info = provision(
     spark,
     factory_catalog=dbutils.widgets.get("factory_catalog"),
     factory_schema=dbutils.widgets.get("factory_schema"),
-    sandbox_catalog=dbutils.widgets.get("sandbox_catalog"),
+    sandbox_schema=dbutils.widgets.get("sandbox_schema"),
     create_catalogs=dbutils.widgets.get("create_catalogs") == "true",
 )
 
@@ -37,4 +37,4 @@ fc, fs = info["factory"].split(".")
 display(spark.sql(f"SHOW TABLES IN {info['factory']}"))
 display(spark.sql(f"SHOW VIEWS IN {info['factory']}"))
 print("Set env vars for the harness: "
-      f"PO_FACTORY_CATALOG={fc}  PO_FACTORY_SCHEMA={fs}  PO_SANDBOX_CATALOG={info['sandbox']}")
+      f"PO_FACTORY_CATALOG={fc}  PO_FACTORY_SCHEMA={fs}  PO_SANDBOX_SCHEMA={info['sandbox_schema']}")

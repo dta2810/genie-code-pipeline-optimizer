@@ -20,7 +20,7 @@ from lib.config import bootstrap_from_job, sync_config
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
 sync_config(spark, cfg)                  # persist to opt_config
 ```
-Show the drafted config (notebooks + compute + sandbox_catalog) and confirm the job with the user.
+Show the drafted config (notebooks + compute + sandbox_schema) and confirm the job with the user.
 
 **Per notebook, in DAG order:**
 
@@ -32,8 +32,9 @@ Show the drafted config (notebooks + compute + sandbox_catalog) and confirm the 
 3. **Propose** concrete optimizations for this notebook. → **GATE 1: wait for human approval.**
 4. **`@optimize-notebook`** — write v2 to `<optimized_folder>/<ntb>_genie_opt_<timestamp>`; never
    edit the original.
-5. **`@sandbox-setup`** — shallow-clone targets into `sandbox_catalog` (WITH data for MERGE), pin
-   inputs via time-travel, remap all writes to the sandbox. Verify no write hits production.
+5. **`@sandbox-setup`** — shallow-clone targets into a dedicated `sandbox_schema` in each target's
+   own catalog (WITH data for MERGE), pin inputs via time-travel, remap all writes to the sandbox.
+   Verify no write hits production.
 6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the same compute.
 7. **`@equivalence-check`** — counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step,
    with `epsilon`. HARD gate: any divergence → `validate=failed`, write insight, STOP (no promotion).

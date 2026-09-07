@@ -6,8 +6,9 @@ def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
 
 
-# Sandbox catalog: clones + remapped writes land here.
-SANDBOX_CATALOG = _env("PO_SANDBOX_CATALOG", "opt_sandbox")
+# Sandbox schema: a dedicated schema (inside prod's own catalog) where clones + remapped
+# writes land. Schema-based (not catalog-based) so isolation needs no CREATE CATALOG privilege.
+SANDBOX_SCHEMA = _env("PO_SANDBOX_SCHEMA", "pipeline_opt_sandbox")
 # Factory schema: audit table + config + governance views.
 FACTORY_CATALOG = _env("PO_FACTORY_CATALOG", "main")
 FACTORY_SCHEMA = _env("PO_FACTORY_SCHEMA", "pipeline_opt_factory")
@@ -25,6 +26,10 @@ def optimized_folder() -> str:
     return f"{WORKSPACE_HOME.rstrip('/')}/optimized"
 
 
-def sandbox_fqn(schema: str, table: str) -> str:
-    """Map a prod schema.table onto the sandbox catalog (same schema/table)."""
-    return f"{SANDBOX_CATALOG}.{schema}.{table}"
+def sandbox_fqn(catalog: str, schema: str, table: str) -> str:
+    """Map a prod catalog.schema.table onto the sandbox schema, inside the SAME catalog.
+
+    Every clone lands in one dedicated sandbox schema; the original schema is folded into the
+    table name (`<origschema>__<table>`) so tables from different prod schemas never collide.
+    """
+    return f"{catalog}.{SANDBOX_SCHEMA}.{schema}__{table}"

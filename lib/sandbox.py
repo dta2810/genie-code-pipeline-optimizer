@@ -1,7 +1,7 @@
 """Isolated sandbox: pin inputs, shallow-clone targets, remap writes. Never touch prod."""
 import re
 
-from .settings import SANDBOX_CATALOG, sandbox_fqn
+from .settings import SANDBOX_SCHEMA, sandbox_fqn
 
 
 def _parts(fqn: str):
@@ -20,16 +20,17 @@ def pin_inputs(spark, source_tables: list[str]) -> dict[str, int]:
 
 
 def clone_targets(spark, target_tables: list[str], suffix: str = "") -> dict[str, str]:
-    """Shallow-clone each target into the sandbox catalog WITH current data (needed for MERGE).
+    """Shallow-clone each target into the sandbox schema WITH current data (needed for MERGE).
 
-    `suffix` lets the caller make independent clones per run (e.g. "_v1"/"_v2") from the same
-    source state, so baseline and candidate each write into a fresh copy.
+    The sandbox schema lives inside the target's OWN catalog, so no CREATE CATALOG privilege
+    is needed. `suffix` lets the caller make independent clones per run (e.g. "_v1"/"_v2") from
+    the same source state, so baseline and candidate each write into a fresh copy.
     """
     mapping = {}
     for t in target_tables:
-        _, schema, table = _parts(t)
-        dst = sandbox_fqn(schema, f"{table}{suffix}")
-        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SANDBOX_CATALOG}.{schema}")
+        catalog, schema, table = _parts(t)
+        dst = sandbox_fqn(catalog, schema, f"{table}{suffix}")
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{SANDBOX_SCHEMA}")
         spark.sql(f"CREATE OR REPLACE TABLE {dst} SHALLOW CLONE {t}")
         mapping[t] = dst
     return mapping

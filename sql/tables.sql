@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.opt_config (
   dag_order          INT,
   operation          STRING,          -- insert | merge | update | ctas | ...
   source_tables      ARRAY<STRING>,   -- pinned via time-travel
-  target_tables      ARRAY<STRING>,   -- shallow-cloned (with data) to sandbox
+  target_tables      ARRAY<STRING>,   -- shallow-cloned (with data) to the sandbox schema
   equivalence_keys   ARRAY<STRING>,
-  sandbox_catalog    STRING,
+  sandbox_schema     STRING,          -- dedicated schema (inside each target's own catalog)
   optimized_folder   STRING,
   epsilon            DOUBLE,
   min_gain           DOUBLE,

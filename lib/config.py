@@ -6,7 +6,7 @@ Per-notebook source/target tables + operation are filled later by the detect-tab
 from databricks.sdk import WorkspaceClient
 
 from . import settings
-from .settings import SANDBOX_CATALOG, factory_fqn
+from .settings import SANDBOX_SCHEMA, factory_fqn
 
 CONFIG_TABLE = factory_fqn("opt_config")
 
@@ -48,7 +48,7 @@ def _compute_of(settings) -> dict:
     return {}
 
 
-def bootstrap_from_job(job_name: str, *, sandbox_catalog: str = SANDBOX_CATALOG,
+def bootstrap_from_job(job_name: str, *, sandbox_schema: str = SANDBOX_SCHEMA,
                        optimized_folder: str | None = None) -> dict:
     """job_name -> Jobs API -> draft opt_config (notebooks in DAG order, tables left for detect-tables)."""
     w = WorkspaceClient()
@@ -75,7 +75,7 @@ def bootstrap_from_job(job_name: str, *, sandbox_catalog: str = SANDBOX_CATALOG,
     return {
         "job_name": s.name,
         "job_id": str(job.job_id),
-        "sandbox_catalog": sandbox_catalog,
+        "sandbox_schema": sandbox_schema,
         "optimized_folder": optimized_folder or f"{settings.optimized_folder()}/{s.name}",
         "compute": _compute_of(s),
         "defaults": dict(DEFAULTS),
@@ -90,7 +90,7 @@ def sync_config(spark, cfg: dict) -> None:
         "job_name": cfg["job_name"], "job_id": cfg["job_id"], "notebook_path": n["notebook_path"],
         "dag_order": n["dag_order"], "operation": n["operation"],
         "source_tables": n["source_tables"], "target_tables": n["target_tables"],
-        "equivalence_keys": n["equivalence_keys"], "sandbox_catalog": cfg["sandbox_catalog"],
+        "equivalence_keys": n["equivalence_keys"], "sandbox_schema": cfg["sandbox_schema"],
         "optimized_folder": cfg["optimized_folder"], "epsilon": d["epsilon"],
         "min_gain": d["min_gain"], "benchmark_runs": d["benchmark_runs"],
         "nondeterministic": n["nondeterministic"], "status": n["status"],

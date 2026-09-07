@@ -32,7 +32,7 @@ workspace, so the optimizer engages only when you call it.
    │    read code ─▶ detect source/target tables ─▶ flag non-determinism
    │    ─▶ propose suggestions ─▶ HUMAN approves            (GATE 1)
    │    ─▶ generate v2 notebook  <ntb>_genie_opt_<ts>  (dedicated folder)
-   │    ─▶ SANDBOX: shallow-clone targets to sandbox_catalog + pin inputs (time-travel)
+   │    ─▶ SANDBOX: shallow-clone targets to a dedicated sandbox_schema + pin inputs (time-travel)
    │    ─▶ run v2 end-to-end against clones
    │    ─▶ VALIDATE step-by-step: counts ─▶ column fingerprint ─▶ EXCEPT ALL (both ways)
    │       + perf (runtime / DBU, median of N)
@@ -45,7 +45,7 @@ promote via PR / DAB back into the job (CI re-runs the same gate)
 
 ## Safety model (why prod is never at risk)
 
-- **Sandbox by catalog** — every clone and every remapped write lands in `sandbox_catalog`.
+- **Sandbox by schema** — every clone and every remapped write lands in a dedicated `sandbox_schema` inside the target's own catalog (no CREATE CATALOG privilege needed); clones are named `<origschema>__<table>` to avoid collisions.
   One catalog switch, not per-table remapping.
 - **Shallow CLONE, not empty tables** — MERGE/UPDATE targets are shallow-cloned *with their
   current data* (zero-copy), so the operation behaves exactly like production. An empty table

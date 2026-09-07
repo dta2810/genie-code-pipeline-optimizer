@@ -14,7 +14,7 @@
 | Entry | `job_name` → Jobs API get job (JSON) → auto-seed `opt_config` |
 | Diagnosis | `perf-profile` skill over job JSON + `system.query.history` / `system.billing` + query profile |
 | Candidate | `optimize-notebook` → `<ntb>_genie_opt_<ts>` in a dedicated folder |
-| Isolation | `sandbox-setup`: shallow CLONE of targets (with data), time-travel-pinned inputs, writes remapped to `sandbox_catalog` |
+| Isolation | `sandbox-setup`: shallow CLONE of targets (with data), time-travel-pinned inputs, writes remapped to a dedicated `sandbox_schema` in the target's own catalog |
 | Correctness | `equivalence-check`: counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step, epsilon tolerance |
 | Performance | `perf-benchmark`: same compute, cache control, median of N, DBU/shuffle/spill |
 | Security | `security-review`: late gate on v2 — secrets, injection, access/PII broadening, sandbox containment, unsafe calls, cost blowups |
@@ -23,7 +23,7 @@
 
 ## Safety invariants
 
-1. Production tables are never written — every write is remapped to `sandbox_catalog`.
+1. Production tables are never written — every write is remapped to the dedicated `sandbox_schema`.
 2. MERGE/UPDATE targets are cloned **with data** (shallow clone), never empty.
 3. Baseline and candidate read **identical pinned inputs**.
 4. Non-deterministic notebooks are flagged and excluded, not silently optimized.

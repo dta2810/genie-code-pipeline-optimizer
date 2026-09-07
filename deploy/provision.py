@@ -4,7 +4,7 @@ import os
 DEFAULTS = {
     "factory_catalog": "main",
     "factory_schema": "pipeline_opt_factory",
-    "sandbox_catalog": "opt_sandbox",
+    "sandbox_schema": "pipeline_opt_sandbox",
 }
 SQL_FILES = ["tables.sql", "config_function.sql", "governance_views.sql"]
 
@@ -16,16 +16,17 @@ def _sql_dir() -> str:
 def provision(spark, *,
               factory_catalog: str = DEFAULTS["factory_catalog"],
               factory_schema: str = DEFAULTS["factory_schema"],
-              sandbox_catalog: str = DEFAULTS["sandbox_catalog"],
+              sandbox_schema: str = DEFAULTS["sandbox_schema"],
               create_catalogs: bool = True,
               sql_dir: str | None = None) -> dict:
-    """Create schema + tables + get_opt_config + governance views. Idempotent.
+    """Create factory schema + tables + get_opt_config + governance views. Idempotent.
 
-    Set create_catalogs=False if the catalogs already exist or you lack CREATE CATALOG.
+    Set create_catalogs=False if the factory catalog already exists or you lack CREATE CATALOG.
+    The sandbox schema is NOT created here — it is created lazily inside each target's own
+    catalog by lib.sandbox.clone_targets, so no extra catalog/privilege is needed.
     """
     sql_dir = sql_dir or _sql_dir()
     if create_catalogs:
-        spark.sql(f"CREATE CATALOG IF NOT EXISTS {sandbox_catalog}")
         spark.sql(f"CREATE CATALOG IF NOT EXISTS {factory_catalog}")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {factory_catalog}.{factory_schema}")
 
@@ -38,5 +39,5 @@ def provision(spark, *,
         print(f"✓ {fn}")
 
     target = f"{factory_catalog}.{factory_schema}"
-    print(f"✓ factory={target}  sandbox={sandbox_catalog}")
-    return {"factory": target, "sandbox": sandbox_catalog}
+    print(f"✓ factory={target}  sandbox_schema={sandbox_schema} (created lazily in each target's catalog)")
+    return {"factory": target, "sandbox_schema": sandbox_schema}
