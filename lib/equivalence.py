@@ -7,6 +7,12 @@ import math
 _NUMERIC = ("int", "long", "short", "bigint", "double", "float", "decimal")
 _FLOATY = ("double", "float", "decimal")
 
+# Risk tier (from optimization-catalog) drives the epsilon policy. A zero-risk rewrite
+# (broadcast/clustering/small-files) is identical by construction -> demand EXACT floats;
+# any float drift signals a bug, not reordering. Semantics-preserving / refresh-change
+# rewrites (de-UDF, salting, incremental-MV) can reassociate floats -> allow epsilon slack.
+_EPSILON_BY_TIER = {"zero_risk": 0.0, "semantics_preserving": 1e-6, "refresh_change": 1e-6}
+
 
 def _df(spark, x):
     return spark.table(x) if isinstance(x, str) else x
@@ -55,8 +61,10 @@ def check_fingerprint(spark, baseline, candidate, epsilon: float = 1e-6) -> dict
     for k in fa:
         va, vb = fa.get(k), fb.get(k)
         numeric = k.endswith(("__sum", "__min", "__max"))
-        same = (math.isclose(va, vb, rel_tol=1e-9, abs_tol=epsilon)
-                if numeric and va is not None and vb is not None else va == vb)
+        if numeric and va is not None and vb is not None:
+            same = (va == vb) if epsilon == 0 else math.isclose(va, vb, rel_tol=1e-9, abs_tol=epsilon)
+        else:
+            same = va == vb
         if not same:
             diffs[k] = (va, vb)
     return {"passed": not diffs, "diffs": diffs, "columns": cols}
@@ -70,9 +78,12 @@ def check_except_all(spark, baseline, candidate, epsilon: float = 1e-6) -> dict:
     if ca != cb:
         return {"passed": False, "reason": "schema mismatch",
                 "only_baseline": sorted(ca - cb), "only_candidate": sorted(cb - ca)}
-    cols, nd = sorted(ca), _ndigits(epsilon)
+    cols, exact = sorted(ca), (epsilon == 0)
+    nd = _ndigits(epsilon)
 
     def norm(df):
+        if exact:  # zero-risk tier: compare floats bit-for-bit, no rounding
+            return df.select(*cols)
         dt = dict(df.dtypes)
         out = df
         for c in cols:
@@ -90,17 +101,32 @@ def check_except_all(spark, baseline, candidate, epsilon: float = 1e-6) -> dict:
             "in_baseline_not_candidate": extra_base, "in_candidate_not_baseline": extra_cand}
 
 
-def assert_equivalent(spark, baseline, candidate, *, epsilon: float = 1e-6,
-                      partition_cols=None) -> dict:
-    """Full ladder; RAISE with a localized reason on the first divergence. Never soften epsilon."""
-    out = {"counts": check_counts(spark, baseline, candidate, partition_cols)}
+def assert_equivalent(spark, baseline, candidate, *, risk_tier: str = "semantics_preserving",
+                      epsilon: float | None = None, partition_cols=None,
+                      baseline_is_full_recompute: bool = False) -> dict:
+    """Full ladder; RAISE with a localized reason on the first divergence. Never soften epsilon.
+
+    `risk_tier` (from optimization-catalog) sets the epsilon policy when `epsilon` is not given
+    explicitly: zero_risk -> exact (0.0), semantics_preserving / refresh_change -> 1e-6. The full
+    `EXCEPT ALL` always runs (fingerprint is a pre-filter, never proof). For `refresh_change` the
+    baseline MUST be the full recompute over the same pinned inputs (pass
+    `baseline_is_full_recompute=True`) or we refuse to certify.
+    """
+    eps = epsilon if epsilon is not None else _EPSILON_BY_TIER.get(risk_tier, 1e-6)
+    if risk_tier == "refresh_change" and not baseline_is_full_recompute:
+        raise ValueError("refresh_change tier requires baseline_is_full_recompute=True "
+                         "(compare the incremental result against a full recompute, not v1's output).")
+    meta = {"risk_tier": risk_tier, "epsilon": eps,
+            "baseline_is_full_recompute": baseline_is_full_recompute}
+
+    out = {"counts": check_counts(spark, baseline, candidate, partition_cols), **meta}
     if not out["counts"]["passed"]:
-        raise ValueError(f"Equivalence FAILED at counts: {out['counts']}")
-    out["fingerprint"] = check_fingerprint(spark, baseline, candidate, epsilon)
+        raise ValueError(f"Equivalence FAILED at counts [{risk_tier}]: {out['counts']}")
+    out["fingerprint"] = check_fingerprint(spark, baseline, candidate, eps)
     if not out["fingerprint"]["passed"]:
-        raise ValueError(f"Equivalence FAILED at fingerprint: {out['fingerprint']['diffs']}")
-    out["except_all"] = check_except_all(spark, baseline, candidate, epsilon)
+        raise ValueError(f"Equivalence FAILED at fingerprint [{risk_tier}]: {out['fingerprint']['diffs']}")
+    out["except_all"] = check_except_all(spark, baseline, candidate, eps)
     if not out["except_all"]["passed"]:
-        raise ValueError(f"Equivalence FAILED at EXCEPT ALL: {out['except_all']}")
+        raise ValueError(f"Equivalence FAILED at EXCEPT ALL [{risk_tier}]: {out['except_all']}")
     out["passed"] = True
     return out

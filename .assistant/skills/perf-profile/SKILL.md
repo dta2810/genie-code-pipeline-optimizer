@@ -15,7 +15,9 @@ Steps:
    Spark SQL metrics (shuffle read/write, spill, bytes/files scanned, task-time skew).
 3. Rank by `runtime x frequency x cost`; pick the hotspot step.
 4. Attribute the cause via the query profile / `EXPLAIN` — but report **measured runtime**, not
-   the plan (EXPLAIN != runtime).
+   the plan (EXPLAIN != runtime). Map each cause to a technique using the `optimization-catalog`
+   symptom→technique table; name the technique(s) in the suggestion so optimize-notebook can load
+   the matching recipe.
 5. Write the bottleneck profile to the factory schema + `audit_log(step="perf_profile", insight=...)`.
 
 Output: a structured bottleneck profile + a short NL insight (where and why it is slow).
