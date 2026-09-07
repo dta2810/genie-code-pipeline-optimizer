@@ -67,6 +67,15 @@ def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
     job+notebook, or promotion is REFUSED. Makes an un-audited run (harness bypassed / reimplemented
     inline) impossible to promote past. Call right before GATE 2.
     """
+    # opt_config must be persisted too (sync_config was actually called, not just kept in memory).
+    cfg_tbl = settings.factory_fqn("opt_config")
+    n_cfg = spark.sql(f"SELECT count(*) c FROM {cfg_tbl} "
+                      f"WHERE job_name = '{job}' AND notebook_path = '{notebook}'").collect()[0]["c"]
+    if not n_cfg:
+        raise ValueError(
+            f"Promotion BLOCKED: opt_config has no row for {job}/{notebook} — sync_config was "
+            "never called (config kept only in memory). Persist it before promoting.")
+
     trail = audit_trail(spark, job=job, notebook=notebook)
     ok = {r["step"] for r in trail if r["status"] == "succeeded"}
     missing = [s for s in required if s not in ok]
@@ -75,7 +84,7 @@ def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
             f"Promotion BLOCKED: no `succeeded` audit trail for {missing} on {job}/{notebook}. "
             "The harness (audit_step/audit_log) was not used — re-run the flow through the "
             "wrappers so every step is recorded, then promote.")
-    return {"audited": True, "steps_recorded": sorted(ok), "events": len(trail)}
+    return {"audited": True, "steps_recorded": sorted(ok), "events": len(trail), "config_rows": n_cfg}
 
 
 @contextmanager

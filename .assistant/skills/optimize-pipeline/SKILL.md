@@ -64,8 +64,14 @@ up — `promoted`/`blocked` history is never overwritten).
    own catalog (WITH data for MERGE), pin inputs via time-travel, remap all writes to the sandbox.
    Verify no write hits production.
 6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the same compute.
-7. **`@equivalence-check`** — counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step,
-   with `epsilon`. HARD gate: any divergence → `validate=failed`, write insight, STOP (no promotion).
+7. **PROTOCOL gate + `@equivalence-check`.** First prove the candidate did not change the table
+   contract, then prove the content matches:
+   ```python
+   from lib.equivalence import assert_no_protocol_change
+   assert_no_protocol_change(spark, v1_clone, v2_clone)   # RAISES on any reader/writer/feature bump
+   ```
+   Then counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step, with `epsilon`. Both are
+   HARD gates: any protocol bump or divergence → write insight, STOP (no promotion).
 8. **`@perf-benchmark`** — median of N runs; report the gain vs `min_gain`. A gain below `min_gain`
    is a **signal to the human, not an automatic block** — surface it clearly. Equivalence is the
    hard gate; perf is advisory. If the human promotes a below-threshold candidate for correctness or

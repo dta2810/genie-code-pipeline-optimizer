@@ -17,6 +17,10 @@ Steps:
 3. Apply one transformation per logical step, keeping intermediate outputs materializable for
    step-by-step equivalence. Honor the technique's equivalence-risk tier (semantics-preserving
    rewrites like de-UDF/salting demand a full, unsampled gate downstream).
+   **NEVER apply a protocol/table-feature bump** (liquid `CLUSTER BY`, deletion vectors, row
+   tracking, generated columns, v2 checkpoint) — forbidden by the catalog rule and blocked by
+   `assert_no_protocol_change`. For `CREATE OR REPLACE TABLE`, carry over the source table's
+   TBLPROPERTIES/protocol so modern engine defaults don't silently bump it.
 4. Keep the write targets as configured so `sandbox-setup` remaps them to the sandbox.
 5. `audit_log(step="generate_v2", change_type=<list of techniques>, insight=<what changed + why faster>)`.
 

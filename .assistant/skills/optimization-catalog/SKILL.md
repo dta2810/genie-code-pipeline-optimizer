@@ -28,6 +28,19 @@ recipe. Read one file, not all six.
 4. **Equivalence risk** — whether the result can change, and what the `EXCEPT ALL` gate must catch.
 5. **Guard notes** — what to check before promotion.
 
+## FORBIDDEN: protocol / table-feature changes (hard rule)
+
+Never propose and never apply an optimization that **raises the table's Delta reader/writer protocol
+or adds a table feature** — it changes the downstream read/write CONTRACT and can break consumers.
+Forbidden set: **liquid clustering (`CLUSTER BY` / `CLUSTER BY AUTO`), deletion vectors, row
+tracking, generated columns, v2 checkpoint, type widening**, and any `delta.feature.*` the source
+table doesn't already have. Prefer non-bumping equivalents: **Z-ORDER instead of liquid clustering**;
+safe table properties only (ZSTD codec, `optimizeWrite`/`autoCompact`) which don't bump the protocol.
+For `CREATE OR REPLACE TABLE`, **preserve the source table's TBLPROPERTIES/protocol** — do not accept
+newer engine defaults (modern DBR enables deletion vectors / row tracking / v2 checkpoint on fresh
+tables by default, which would bump the protocol). This is enforced by
+`equivalence.assert_no_protocol_change` in the sandbox — a bump is BLOCKED before promotion.
+
 ## Equivalence-risk tiers (drives how hard the gate runs)
 
 - **Zero-risk rewrite** (broadcast join, small-files OPTIMIZE, clustering): result is provably

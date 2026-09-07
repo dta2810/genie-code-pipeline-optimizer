@@ -101,6 +101,33 @@ def check_except_all(spark, baseline, candidate, epsilon: float = 1e-6) -> dict:
             "in_baseline_not_candidate": extra_base, "in_candidate_not_baseline": extra_cand}
 
 
+def _protocol(spark, table) -> tuple[int, int, set]:
+    """(minReaderVersion, minWriterVersion, table-features) of a Delta table via DESCRIBE DETAIL."""
+    r = spark.sql(f"DESCRIBE DETAIL {table}").collect()[0].asDict()
+    return (int(r.get("minReaderVersion") or 1), int(r.get("minWriterVersion") or 1),
+            set(r.get("tableFeatures") or []))
+
+
+def assert_no_protocol_change(spark, baseline, candidate) -> dict:
+    """HARD gate: the candidate output must NOT raise the Delta reader/writer protocol or add a
+    table feature vs the baseline. Protocol-bumping optimizations (liquid clustering `CLUSTER BY`,
+    deletion vectors, row tracking, generated columns, v2 checkpoint) change the table's downstream
+    read/write CONTRACT and can break consumers — they are forbidden, never proposed, never applied.
+    Run in the sandbox before promotion. RAISES on any bump.
+    """
+    br, bw, bf = _protocol(spark, baseline)
+    cr, cw, cf = _protocol(spark, candidate)
+    added = sorted(cf - bf)
+    if cr > br or cw > bw or added:
+        raise ValueError(
+            f"Protocol change BLOCKED: candidate needs reader/writer ({cr}/{cw}) vs baseline "
+            f"({br}/{bw}); added table features {added}. Protocol/feature bumps are forbidden — "
+            "they change the downstream contract. Use non-bumping equivalents (Z-ORDER not liquid "
+            "clustering) and, for CREATE OR REPLACE, preserve the source table's TBLPROPERTIES/"
+            "protocol instead of accepting newer engine defaults.")
+    return {"protocol_ok": True, "reader": cr, "writer": cw, "features": sorted(cf)}
+
+
 def assert_equivalent(spark, baseline, candidate, *, risk_tier: str = "semantics_preserving",
                       epsilon: float | None = None, partition_cols=None,
                       baseline_is_full_recompute: bool = False) -> dict:
