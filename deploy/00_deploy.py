@@ -34,7 +34,8 @@ info = provision(
 # COMMAND ----------
 
 fc, fs = info["factory"].split(".")
-display(spark.sql(f"SHOW TABLES IN {info['factory']}"))
-display(spark.sql(f"SHOW VIEWS IN {info['factory']}"))
-print("Set env vars for the harness: "
-      f"PO_FACTORY_CATALOG={fc}  PO_FACTORY_SCHEMA={fs}  PO_SANDBOX_SCHEMA={info['sandbox_schema']}")
+# information_schema is portable (SHOW VIEWS IN catalog.schema isn't supported on serverless).
+display(spark.sql(
+    f"SELECT table_name, table_type FROM {fc}.information_schema.tables "
+    f"WHERE table_schema = '{fs}' ORDER BY table_type, table_name"))
+print(f"Factory provisioned at {info['factory']}  (sandbox schema: {info['sandbox_schema']})")
