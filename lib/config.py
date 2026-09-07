@@ -62,6 +62,7 @@ def bootstrap_from_job(job_name: str, *, sandbox_schema: str = SANDBOX_SCHEMA,
             continue
         notebooks.append({
             "notebook_path": t.notebook_task.notebook_path,
+            "task_key": t.task_key,     # attributes runtime for hotspot ranking
             "dag_order": order.get(t.task_key, 0),
             "operation": None,          # detect-tables fills
             "source_tables": [],        # detect-tables fills (to pin)
@@ -88,6 +89,7 @@ def sync_config(spark, cfg: dict) -> None:
     d, nb = cfg["defaults"], cfg["notebooks"]
     rows = [{
         "job_name": cfg["job_name"], "job_id": cfg["job_id"], "notebook_path": n["notebook_path"],
+        "task_key": n.get("task_key"),
         "dag_order": n["dag_order"], "operation": n["operation"],
         "source_tables": n["source_tables"], "target_tables": n["target_tables"],
         "equivalence_keys": n["equivalence_keys"], "sandbox_schema": cfg["sandbox_schema"],

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.opt_config (
   job_name           STRING,
   job_id             STRING,
   notebook_path      STRING,
+  task_key           STRING,          -- job task key (attributes runtime for hotspot ranking)
   dag_order          INT,
   operation          STRING,          -- insert | merge | update | ctas | ...
   source_tables      ARRAY<STRING>,   -- pinned via time-travel
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.opt_config (
   min_gain           DOUBLE,
   benchmark_runs     INT,
   nondeterministic   BOOLEAN,
-  status             STRING           -- pending|proposed|approved|validated|promoted|blocked
+  status             STRING           -- pending|skipped|proposed|approved|validated|promoted|blocked
 ) USING DELTA;
 
 -- optimization_audit: append-only trail; started -> terminal per step; NL insight.

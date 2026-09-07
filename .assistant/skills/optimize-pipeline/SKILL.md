@@ -17,16 +17,30 @@ sub-skills' `scripts/` — do NOT reimplement their logic inline.
 **0. Bootstrap config.** From the user's job name:
 ```python
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
+from lib.perf import rank_notebooks
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
 ```
 Show the drafted config (notebooks + compute + sandbox_schema) and confirm the **job** with the user.
 
-**0b. SELECT which notebooks to optimize this run** — the gradual, one-step-at-a-time control.
-Present the notebooks as a numbered list (`dag_order` · path · operation) and ask the user which to
-optimize now. Optimizing all at once is discouraged; steer toward one (or a small set) to start.
+**0a. Rank the hotspots (light, read-only).** Before asking the user to choose, cheaply rank the
+notebooks by cost so the recommendation is data-driven — not a blind pick.
 ```python
-select_notebooks(cfg, picks=5)           # a dag_order, a name substring, or a list; None = all
-sync_config(spark, cfg)                   # persist: selected -> pending, the rest -> skipped
+rank = rank_notebooks(spark, cfg["job_id"], cfg["notebooks"])   # runtime x freq from system tables
+```
+This only READS `system.lakeflow.job_task_run_timeline` — no writes, negligible cost. It is the
+LIGHT pass; `perf-profile` (step 2) does the DEEP root-cause dive on the chosen notebook only.
+
+**0b. SELECT which notebooks to optimize this run (hybrid: recommend + override).** Present the
+notebooks ranked by `cost_share`, and **recommend the top hotspot**:
+> "`5_gold_ingestion` is 58% of the job's runtime over the last 30 days — recommend starting there.
+> Optimize that one, or pick another?"
+The user accepts the recommendation or names another (gradual — steer toward one, or a small set, to
+start). If `rank["ranked"]` is False (no telemetry), just present the DAG-ordered list and let the
+user pick.
+```python
+pick = rank["recommended"]["dag_order"] if rank.get("recommended") else <user's choice>
+select_notebooks(cfg, picks=pick)         # a dag_order, a name substring, or a list; None = all
+sync_config(spark, cfg)                    # persist: selected -> pending, the rest -> skipped
 ```
 Selected notebooks are `pending`; the rest are `skipped` (persisted, so a later run can pick them
 up — `promoted`/`blocked` history is never overwritten).
