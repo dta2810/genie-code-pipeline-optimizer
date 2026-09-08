@@ -7,7 +7,11 @@ DEFAULTS = {
     "factory_catalog": "main",
     "factory_schema": "pipeline_opt_factory",
     "sandbox_schema": "pipeline_opt_sandbox",
+    "compute_cluster_id": "",
 }
+# Columns added to opt_config after its first release — ALTERed in idempotently so redeploys pick
+# them up on an existing table (CREATE TABLE IF NOT EXISTS never adds a column). name -> type.
+OPT_CONFIG_ADDED_COLUMNS = {"compute_cluster_id": "STRING"}
 # Mirror of lib.settings.CONFIG_FILE_TMPL — where the runtime harness reads the factory location
 # (outside the bundle sync root, so `bundle deploy` never deletes it). Keep the two in sync.
 RUNTIME_CONFIG_TMPL = "/Workspace/Users/{user}/.genie_optimizer_factory.json"
@@ -31,6 +35,7 @@ def provision(spark, *,
               factory_catalog: str = DEFAULTS["factory_catalog"],
               factory_schema: str = DEFAULTS["factory_schema"],
               sandbox_schema: str = DEFAULTS["sandbox_schema"],
+              compute_cluster_id: str = DEFAULTS["compute_cluster_id"],
               workspace_home: str | None = None,
               create_catalogs: bool = True,
               sql_dir: str | None = None) -> dict:
@@ -68,6 +73,15 @@ def provision(spark, *,
         for stmt in _split_statements(body):
             spark.sql(stmt)
         print(f"✓ {fn}")
+        if fn == "tables.sql":  # evolve an existing opt_config before get_opt_config reads new cols
+            existing_cols = {r["column_name"] for r in spark.sql(
+                f"SELECT column_name FROM {factory_catalog}.information_schema.columns "
+                f"WHERE table_schema = '{factory_schema}' AND table_name = 'opt_config'").collect()}
+            for col, typ in OPT_CONFIG_ADDED_COLUMNS.items():
+                if col not in existing_cols:  # no ADD COLUMN IF NOT EXISTS on this runtime
+                    spark.sql(f"ALTER TABLE {factory_catalog}.{factory_schema}.opt_config "
+                              f"ADD COLUMNS ({col} {typ})")
+            print(f"✓ opt_config columns ensured: {list(OPT_CONFIG_ADDED_COLUMNS)}")
 
     target = f"{factory_catalog}.{factory_schema}"
     print(f"✓ factory={target}  sandbox_schema={sandbox_schema} (created lazily in each target's catalog)")
@@ -75,6 +89,8 @@ def provision(spark, *,
     # Record the resolved config where the runtime harness (settings.configure) reads it.
     cfg = {"factory_catalog": factory_catalog, "factory_schema": factory_schema,
            "sandbox_schema": sandbox_schema}
+    if compute_cluster_id:
+        cfg["compute_cluster_id"] = compute_cluster_id
     if workspace_home:
         cfg["workspace_home"] = workspace_home
     try:

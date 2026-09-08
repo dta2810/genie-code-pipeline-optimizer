@@ -5,13 +5,13 @@ RETURNS TABLE (
   job_name STRING, notebook_path STRING, dag_order INT, operation STRING,
   source_tables ARRAY<STRING>, target_tables ARRAY<STRING>, equivalence_keys ARRAY<STRING>,
   sandbox_schema STRING, optimized_folder STRING, epsilon DOUBLE, min_gain DOUBLE,
-  benchmark_runs INT, nondeterministic BOOLEAN, status STRING
+  benchmark_runs INT, compute_cluster_id STRING, nondeterministic BOOLEAN, status STRING
 )
 COMMENT 'Return the optimization config rows for a job, in DAG order.'
 RETURN
   SELECT job_name, notebook_path, dag_order, operation, source_tables, target_tables,
          equivalence_keys, sandbox_schema, optimized_folder, epsilon, min_gain,
-         benchmark_runs, nondeterministic, status
+         benchmark_runs, compute_cluster_id, nondeterministic, status
   FROM {{catalog}}.{{schema}}.opt_config
   WHERE job_name = p_job
   ORDER BY dag_order;

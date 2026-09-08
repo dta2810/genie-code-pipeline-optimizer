@@ -15,6 +15,7 @@ from provision import DEFAULTS, provision
 dbutils.widgets.text("factory_catalog", DEFAULTS["factory_catalog"], "Factory catalog")
 dbutils.widgets.text("factory_schema", DEFAULTS["factory_schema"], "Factory schema")
 dbutils.widgets.text("sandbox_schema", DEFAULTS["sandbox_schema"], "Sandbox schema")
+dbutils.widgets.text("compute_cluster_id", DEFAULTS["compute_cluster_id"], "Dedicated cluster id (heavy runs)")
 dbutils.widgets.dropdown("create_catalogs", "true", ["true", "false"], "Create catalogs?")
 
 # COMMAND ----------
@@ -24,6 +25,7 @@ info = provision(
     factory_catalog=dbutils.widgets.get("factory_catalog"),
     factory_schema=dbutils.widgets.get("factory_schema"),
     sandbox_schema=dbutils.widgets.get("sandbox_schema"),
+    compute_cluster_id=dbutils.widgets.get("compute_cluster_id"),
     create_catalogs=dbutils.widgets.get("create_catalogs") == "true",
 )
 

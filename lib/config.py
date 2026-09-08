@@ -12,7 +12,8 @@ def _config_table() -> str:
     """opt_config FQN, resolved at call time so settings.configure() takes effect."""
     return settings.factory_fqn("opt_config")
 
-DEFAULTS = {"epsilon": 1e-6, "min_gain": 0.20, "benchmark_runs": 3, "validation_tier": "sampled"}
+DEFAULTS = {"epsilon": 1e-6, "min_gain": 0.20, "benchmark_runs": 3, "validation_tier": "sampled",
+            "compute_cluster_id": None}
 
 
 def _resolve_job(w: WorkspaceClient, job_name: str):
@@ -76,13 +77,18 @@ def bootstrap_from_job(job_name: str, *, sandbox_schema: str | None = None,
         })
     notebooks.sort(key=lambda x: x["dag_order"])
 
+    defaults = dict(DEFAULTS)
+    # Governed dedicated compute for heavy sandbox runs: default to the workspace setting; the job's
+    # own compute and any explicit override are resolved later by compute.resolve_compute(cfg).
+    defaults["compute_cluster_id"] = defaults["compute_cluster_id"] or settings.COMPUTE_CLUSTER_ID or None
+
     return {
         "job_name": s.name,
         "job_id": str(job.job_id),
         "sandbox_schema": sandbox_schema,
         "optimized_folder": optimized_folder or f"{settings.optimized_folder()}/{s.name}",
         "compute": _compute_of(s),
-        "defaults": dict(DEFAULTS),
+        "defaults": defaults,
         "notebooks": notebooks,
     }
 
@@ -98,6 +104,7 @@ def sync_config(spark, cfg: dict) -> None:
         "equivalence_keys": n["equivalence_keys"], "sandbox_schema": cfg["sandbox_schema"],
         "optimized_folder": cfg["optimized_folder"], "epsilon": d["epsilon"],
         "min_gain": d["min_gain"], "benchmark_runs": d["benchmark_runs"],
+        "compute_cluster_id": d.get("compute_cluster_id"),
         "nondeterministic": n["nondeterministic"], "status": n["status"],
     } for n in nb]
     table = _config_table()

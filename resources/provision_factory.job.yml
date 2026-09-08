@@ -14,4 +14,5 @@ resources:
               factory_catalog: ${var.factory_catalog}
               factory_schema: ${var.factory_schema}
               sandbox_schema: ${var.sandbox_schema}
+              compute_cluster_id: ${var.compute_cluster_id}
               create_catalogs: ${var.create_catalogs}

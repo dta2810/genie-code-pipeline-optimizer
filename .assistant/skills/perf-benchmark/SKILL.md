@@ -5,18 +5,25 @@ description: Measure baseline vs candidate performance fairly and decide the per
 
 # perf-benchmark
 
-Import `scripts/benchmark_perf.py` — do NOT reimplement inline.
+Import `scripts/benchmark_perf.py` — do NOT reimplement inline. For wall-clock on a dedicated
+cluster, use `lib.compute.benchmark_on_cluster` (submits each notebook via the Jobs API and takes
+the median of `execution_duration`).
 
-Inputs: baseline notebook + candidate notebook, `compute`, `benchmark_runs`, `min_gain`.
+Inputs: baseline notebook + candidate notebook, the resolved `compute` cluster (`lib.compute.
+resolve_compute(cfg)`), `benchmark_runs`, `min_gain`.
 
 **Equivalence is the proof; perf is a separate, advisory reading — keep them apart.** A candidate is
 correct because equivalence passed, NOT because it was faster. Report the two independently.
 
-**Serverless warning:** wall-clock on serverless is contaminated by cold starts / autoscale — a
+**Run the benchmark on the dedicated cluster whenever one is resolved — not on the serverless session.**
+`resolve_compute(cfg)` returns the governed `compute_cluster_id` (the user can override it for this run,
+or set it per job in `opt_config`); when it returns a cluster, submit both notebooks there
+(`benchmark_on_cluster`) so the timing is warm and comparable. Wall-clock on serverless is contaminated
+by cold starts / autoscale — a
 tiny sampled run can show minutes of "runtime" that is overhead, not I/O (e.g. a 500K-row rewrite
-timing 1259s). Do NOT quote such a number as the speedup. Trust the perf number only from a **warm,
-dedicated cluster**; on serverless, report the I/O pattern (rows/files rewritten: full-rewrite vs
-delta-touch) as the evidence and label wall-clock "indicative only".
+timing 1259s). If no dedicated cluster is resolved (`serverless_session`), do NOT quote wall-clock;
+report the I/O pattern (rows/files rewritten: full-rewrite vs delta-touch) as the evidence and label
+any timing "indicative only".
 
 Steps:
 1. Run baseline and candidate on the **same** cluster/warehouse against the sandbox clones.

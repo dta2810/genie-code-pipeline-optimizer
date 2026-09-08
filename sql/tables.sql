@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS {{catalog}}.{{schema}}.opt_config (
   epsilon            DOUBLE,
   min_gain           DOUBLE,
   benchmark_runs     INT,
+  compute_cluster_id STRING,          -- dedicated cluster for heavy sandbox runs (governed; NULL = serverless session)
   nondeterministic   BOOLEAN,
   status             STRING           -- pending|skipped|proposed|approved|validated|promoted|blocked
 ) USING DELTA;

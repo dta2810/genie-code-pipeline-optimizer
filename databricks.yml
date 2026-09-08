@@ -26,6 +26,9 @@ variables:
   create_catalogs:
     description: Create the factory catalog (false if it exists or you lack CREATE CATALOG).
     default: "false"
+  compute_cluster_id:
+    description: Dedicated cluster for heavy sandbox runs + wall-clock benchmark (empty = serverless session).
+    default: ""
 
 targets:
   # David's LATAM workspace — the current deploy target (tables live in main_david_thomas).
@@ -44,3 +47,4 @@ targets:
       factory_schema: genie_optimizer_v1
       sandbox_schema: genie_optimizer_v1_sandbox
       create_catalogs: "false"
+      compute_cluster_id: "0618-232249-z1lgrdvh"   # gen_ai_call_analysis_cluster (DBR 16.4, single-user)

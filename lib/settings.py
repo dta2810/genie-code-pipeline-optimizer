@@ -22,6 +22,10 @@ FACTORY_CATALOG = _env("PO_FACTORY_CATALOG", "main")
 FACTORY_SCHEMA = _env("PO_FACTORY_SCHEMA", "pipeline_opt_factory")
 # Workspace home: where the Genie Code assets live (skills, lib, deploy, sql, v2 notebooks).
 WORKSPACE_HOME = _env("PO_WORKSPACE_HOME", "/Workspace/Users/<you>/genie_code_optimizer")
+# Dedicated cluster for the HEAVY sandbox work (running v1/v2 notebooks + wall-clock benchmark).
+# Governed per-job in opt_config.compute_cluster_id; this is the workspace-wide default. Empty ->
+# the harness falls back to the serverless session (fine at sample scale, but noisy wall-clock).
+COMPUTE_CLUSTER_ID = _env("PO_COMPUTE_CLUSTER_ID", "")
 
 # Where provision records the resolved factory config so the runtime can pick it up without env.
 # A dotfile in the user's workspace home — OUTSIDE the bundle sync root, so `bundle deploy` never
@@ -55,12 +59,12 @@ def config_file_path(user: str) -> str:
 
 
 def configure(*, spark=None, factory_catalog=None, factory_schema=None,
-              sandbox_schema=None, workspace_home=None) -> dict:
+              sandbox_schema=None, workspace_home=None, compute_cluster_id=None) -> dict:
     """Set the factory location for this runtime. Explicit args win; otherwise, if `spark` is
-    given, derive the workspace home from current_user and load factory_catalog/schema/sandbox
-    from the provision-written config file (if present). Idempotent. Call once at flow start.
+    given, derive the workspace home from current_user and load factory_catalog/schema/sandbox/
+    compute from the provision-written config file (if present). Idempotent. Call once at flow start.
     """
-    global FACTORY_CATALOG, FACTORY_SCHEMA, SANDBOX_SCHEMA, WORKSPACE_HOME
+    global FACTORY_CATALOG, FACTORY_SCHEMA, SANDBOX_SCHEMA, WORKSPACE_HOME, COMPUTE_CLUSTER_ID
     loaded, disc = {}, {}
     if spark is not None:
         user = _current_user(spark)
@@ -81,13 +85,15 @@ def configure(*, spark=None, factory_catalog=None, factory_schema=None,
     FACTORY_SCHEMA = factory_schema or loaded.get("factory_schema") or disc.get("factory_schema") or FACTORY_SCHEMA
     SANDBOX_SCHEMA = sandbox_schema or loaded.get("sandbox_schema", SANDBOX_SCHEMA)
     WORKSPACE_HOME = workspace_home or loaded.get("workspace_home", WORKSPACE_HOME)
+    COMPUTE_CLUSTER_ID = compute_cluster_id or loaded.get("compute_cluster_id", COMPUTE_CLUSTER_ID)
     return resolved()
 
 
 def resolved() -> dict:
     """The factory location currently in effect."""
     return {"factory_catalog": FACTORY_CATALOG, "factory_schema": FACTORY_SCHEMA,
-            "sandbox_schema": SANDBOX_SCHEMA, "workspace_home": WORKSPACE_HOME}
+            "sandbox_schema": SANDBOX_SCHEMA, "workspace_home": WORKSPACE_HOME,
+            "compute_cluster_id": COMPUTE_CLUSTER_ID}
 
 
 def factory_fqn(name: str) -> str:

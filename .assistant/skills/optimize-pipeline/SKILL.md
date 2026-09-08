@@ -24,12 +24,23 @@ print(settings.resolved())               # confirm it points at the DEPLOYED fac
 
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 from lib.perf import rank_notebooks
+from lib.compute import resolve_compute
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
+print(resolve_compute(cfg))              # which cluster runs the HEAVY sandbox work
 ```
 Do NOT provision the factory if `resolved()` already points at a real deployed schema — provisioning
 is a one-time deploy step (`deploy/00_deploy`), and it now refuses to create a duplicate anyway.
 Only provision on a genuinely fresh workspace.
 Show the drafted config (notebooks + compute + sandbox_schema) and confirm the **job** with the user.
+
+**Compute routing.** Control work (bootstrap, detect-tables, audit/config writes, equivalence on the
+*sampled* sandbox) runs on THIS serverless session — cheap and bounded. The HEAVY work — running the
+v1/v2 notebooks end-to-end and the wall-clock benchmark — is submitted to a **dedicated cluster** via
+the Jobs API, because serverless cold-starts and loses cell state on autoscale (a large rewrite times
+out) and its wall-clock is contaminated (setup, not I/O). `resolve_compute(cfg)` picks it: explicit
+override > `opt_config.compute_cluster_id` (governed) > the job's own compute > the settings default >
+serverless session. If it resolves to `serverless_session`, WARN the user that large runs may time out
+and wall-clock is indicative-only.
 
 **0a. Rank the hotspots (light, read-only).** Before asking the user to choose, cheaply rank the
 notebooks by cost so the recommendation is data-driven — not a blind pick.
@@ -61,13 +72,25 @@ up — `promoted`/`blocked` history is never overwritten).
    notebook's `opt_config` row. If non-deterministic or a name is unresolved → STOP, report.
 2. **`@perf-profile`** — diagnose the bottleneck (job JSON + system tables + query profile).
    Report *where* and *why* it is slow; report measured runtime, not just the plan.
-3. **Propose** concrete optimizations for this notebook. → **GATE 1: wait for human approval.**
+3. **Propose** concrete optimizations for this notebook, and state which compute will run the
+   sandbox (`resolve_compute(cfg)`). The user may override the cluster for this run (pass `override=`)
+   or accept the governed default. → **GATE 1: wait for human approval.**
 4. **`@optimize-notebook`** — write v2 to `<optimized_folder>/<ntb>_genie_opt_<timestamp>`; never
    edit the original.
 5. **`@sandbox-setup`** — shallow-clone targets into a dedicated `sandbox_schema` in each target's
    own catalog (WITH data for MERGE), pin inputs via time-travel, remap all writes to the sandbox.
    Verify no write hits production.
-6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the same compute.
+6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the **same
+   compute** — the dedicated cluster from `resolve_compute(cfg)`, not this serverless session.
+   Materialize the two sandbox-remapped notebooks to the workspace and submit each on the cluster:
+   ```python
+   from lib.compute import resolve_compute, run_notebook
+   cid = resolve_compute(cfg)["cluster_id"]
+   if cid:
+       run_notebook(v1_sandbox_path, cid)   # jobs runs submit; clean execution_duration
+       run_notebook(v2_sandbox_path, cid)
+   # else: run inline on the session (sampled sandbox only) and label wall-clock indicative-only
+   ```
 7. **PROTOCOL gate + `@equivalence-check`.** First prove the candidate did not change the table
    contract, then prove the content matches:
    ```python
@@ -76,9 +99,11 @@ up — `promoted`/`blocked` history is never overwritten).
    ```
    Then counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step, with `epsilon`. Both are
    HARD gates: any protocol bump or divergence → write insight, STOP (no promotion).
-8. **`@perf-benchmark`** — median of N runs; report the gain vs `min_gain`. A gain below `min_gain`
-   is a **signal to the human, not an automatic block** — surface it clearly. Equivalence is the
-   hard gate; perf is advisory. If the human promotes a below-threshold candidate for correctness or
+8. **`@perf-benchmark`** — median of N runs **on the dedicated cluster** (`benchmark_on_cluster`, warm,
+   `execution_duration` only); report the gain vs `min_gain`. A gain below `min_gain` is a **signal to
+   the human, not an automatic block** — surface it clearly. Equivalence is the hard gate; perf is
+   advisory. If it resolves to serverless, do NOT quote wall-clock — report the structural I/O signal
+   (rows/files rewritten) instead. If the human promotes a below-threshold candidate for correctness or
    maintainability (not raw speed), say so explicitly and record that rationale in the audit insight.
 9. **`@security-review`** — LATE security gate on the v2 (secrets, injection, access/PII broadening,
    writes outside the sandbox, unsafe UDF/external calls, cost blowups). Any finding → STOP, no promotion.
