@@ -9,19 +9,32 @@ Import `scripts/profile_perf.py` — do NOT reimplement inline. This is the **DE
 on the ONE notebook the user selected — not the cross-notebook hotspot ranking (that is the light
 `lib.perf.rank_notebooks` pass the orchestrator runs before selection).
 
-Inputs: the selected `notebook_path`, `job_name` (→ Jobs API JSON), `opt_config`.
+Inputs: the selected `notebook_path`, its `target_tables` (from detect-tables), `opt_config`.
+
+**Get the signals from data, portably (no logfood).** Call `profile(spark, job=, notebook=,
+target_tables=)` — it reads two sources available in any workspace and audits the result:
+- **`system.query.history`** — `spilled_local_bytes` (SPILL), `read_bytes`/`read_rows`/`produced_rows`
+  (bytes scanned + row amplification = exploding-join signal), and the time breakdown
+  (compilation vs execution). Matched to the notebook by its target-table names.
+- **Delta `DESCRIBE HISTORY` operationMetrics** — files/rows added vs removed + scan/rewrite time =
+  the **full-rewrite-vs-delta-touch** pattern (the INSERT OVERWRITE / DELETE+INSERT waste).
+
+**Honest caveat on SHUFFLE:** per-stage shuffle bytes are **not** columns in `system.query.history`;
+they live in the query profile / Spark UI. Report spill + the indirect signals, and flag
+shuffle/skew as **"suspected — confirm in the query profile"** rather than quoting a number you don't
+have. For the real shuffle/operator detail, use the query profile (or, for internal FE analysis only,
+`vadim-lite` / the query-profile toolkit) — do NOT block on it.
 
 Steps:
-1. For the selected notebook, gather runtime + cost from `system.query.history` / `system.billing`
-   and Spark SQL metrics (shuffle read/write, spill, bytes/files scanned, task-time skew).
-2. Within the notebook, find the slowest operation/step (the query profile pinpoints it).
-3. Attribute the cause via the query profile / `EXPLAIN` — but report **measured runtime**, not
-   the plan (EXPLAIN != runtime). Map each cause to a technique using the `optimization-catalog`
-   symptom→technique table — AND, when they fit better, techniques from your other Databricks skills
-   (`writing-sql`, `table-optimization`, `data-modification`, `performance-tuning`). The catalog is a
-   starting set, not a limit. Name the technique(s) and their source in the suggestion so
-   optimize-notebook can apply them. (The forbidden protocol rule + gates apply to every source.)
-4. Write the bottleneck profile to the factory schema + `audit_log(step="perf_profile", insight=...)`.
+1. `profile(...)` → the portable signals + a '4 S's' diagnosis (spill, row amplification, full-rewrite,
+   suspected shuffle/skew). Report **measured** numbers, not the plan (EXPLAIN != runtime).
+2. Map each flagged cause to a technique via the `optimization-catalog` symptom→technique table — AND,
+   when they fit better, techniques from your other Databricks skills (`writing-sql`,
+   `table-optimization`, `data-modification`, `performance-tuning`). The catalog is a starting set, not
+   a limit. Name the technique(s) and their source so optimize-notebook can apply them. (The forbidden
+   protocol rule + gates apply to every source.)
+3. `profile(...)` already audits `step="perf_profile"` with the `perf` map (spill/bytes/amplification/
+   flags) + a short NL insight. Present the flags to the human at GATE 1.
 
 Output: a structured bottleneck profile + a short NL insight (where and why it is slow).
 

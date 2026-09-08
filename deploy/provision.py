@@ -1,20 +1,20 @@
-"""Provision the factory UC assets. Param-driven with defaults; callable or via 00_deploy widgets."""
+"""Provision the optimizer UC assets. Param-driven with defaults; callable or via 00_deploy widgets."""
 import json
 import os
 import re
 
 DEFAULTS = {
-    "factory_catalog": "main",
-    "factory_schema": "pipeline_opt_factory",
+    "optimizer_catalog": "main",
+    "optimizer_schema": "genie_optimizer",
     "sandbox_schema": "pipeline_opt_sandbox",
     "compute_cluster_id": "",
 }
 # Columns added to opt_config after its first release — ALTERed in idempotently so redeploys pick
 # them up on an existing table (CREATE TABLE IF NOT EXISTS never adds a column). name -> type.
 OPT_CONFIG_ADDED_COLUMNS = {"compute_cluster_id": "STRING"}
-# Mirror of lib.settings.CONFIG_FILE_TMPL — where the runtime harness reads the factory location
+# Mirror of lib.settings.CONFIG_FILE_TMPL — where the runtime harness reads the optimizer location
 # (outside the bundle sync root, so `bundle deploy` never deletes it). Keep the two in sync.
-RUNTIME_CONFIG_TMPL = "/Workspace/Users/{user}/.genie_optimizer_factory.json"
+RUNTIME_CONFIG_TMPL = "/Workspace/Users/{user}/.genie_optimizer.json"
 SQL_FILES = ["tables.sql", "config_function.sql", "governance_views.sql"]
 
 
@@ -32,62 +32,62 @@ def _split_statements(sql: str) -> list[str]:
 
 
 def provision(spark, *,
-              factory_catalog: str = DEFAULTS["factory_catalog"],
-              factory_schema: str = DEFAULTS["factory_schema"],
+              optimizer_catalog: str = DEFAULTS["optimizer_catalog"],
+              optimizer_schema: str = DEFAULTS["optimizer_schema"],
               sandbox_schema: str = DEFAULTS["sandbox_schema"],
               compute_cluster_id: str = DEFAULTS["compute_cluster_id"],
               workspace_home: str | None = None,
               create_catalogs: bool = True,
               sql_dir: str | None = None) -> dict:
-    """Create factory schema + tables + get_opt_config + governance views. Idempotent.
+    """Create optimizer schema + tables + get_opt_config + governance views. Idempotent.
 
-    Set create_catalogs=False if the factory catalog already exists or you lack CREATE CATALOG.
+    Set create_catalogs=False if the optimizer catalog already exists or you lack CREATE CATALOG.
     The sandbox schema is NOT created here — it is created lazily inside each target's own
     catalog by lib.sandbox.clone_targets, so no extra catalog/privilege is needed. Also records the
     resolved config to the user's runtime config file so the harness needs no process env.
     """
     sql_dir = sql_dir or _sql_dir()
 
-    # Guard against a duplicate factory: if opt_config already exists elsewhere, point at it.
-    target = f"{factory_catalog}.{factory_schema}"
+    # Guard against a duplicate optimizer: if opt_config already exists elsewhere, point at it.
+    target = f"{optimizer_catalog}.{optimizer_schema}"
     try:
         existing = [f"{r['table_catalog']}.{r['table_schema']}" for r in spark.sql(
             "SELECT table_catalog, table_schema FROM system.information_schema.tables "
             "WHERE table_name = 'opt_config'").collect()]
         other = [e for e in existing if e != target]
         if other:
-            print(f"! A factory already exists at {other} — NOT creating a duplicate at {target}. "
+            print(f"! A optimizer already exists at {other} — NOT creating a duplicate at {target}. "
                   f"Use settings.configure() to adopt it (it auto-discovers), or pass that schema.")
-            return {"factory": other[0], "sandbox_schema": sandbox_schema, "skipped": True}
+            return {"optimizer": other[0], "sandbox_schema": sandbox_schema, "skipped": True}
     except Exception:
         pass
 
     if create_catalogs:
-        spark.sql(f"CREATE CATALOG IF NOT EXISTS {factory_catalog}")
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {factory_catalog}.{factory_schema}")
+        spark.sql(f"CREATE CATALOG IF NOT EXISTS {optimizer_catalog}")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {optimizer_catalog}.{optimizer_schema}")
 
     for fn in SQL_FILES:
         with open(os.path.join(sql_dir, fn)) as f:
-            body = (f.read().replace("{{catalog}}", factory_catalog)
-                            .replace("{{schema}}", factory_schema))
+            body = (f.read().replace("{{catalog}}", optimizer_catalog)
+                            .replace("{{schema}}", optimizer_schema))
         for stmt in _split_statements(body):
             spark.sql(stmt)
         print(f"✓ {fn}")
         if fn == "tables.sql":  # evolve an existing opt_config before get_opt_config reads new cols
             existing_cols = {r["column_name"] for r in spark.sql(
-                f"SELECT column_name FROM {factory_catalog}.information_schema.columns "
-                f"WHERE table_schema = '{factory_schema}' AND table_name = 'opt_config'").collect()}
+                f"SELECT column_name FROM {optimizer_catalog}.information_schema.columns "
+                f"WHERE table_schema = '{optimizer_schema}' AND table_name = 'opt_config'").collect()}
             for col, typ in OPT_CONFIG_ADDED_COLUMNS.items():
                 if col not in existing_cols:  # no ADD COLUMN IF NOT EXISTS on this runtime
-                    spark.sql(f"ALTER TABLE {factory_catalog}.{factory_schema}.opt_config "
+                    spark.sql(f"ALTER TABLE {optimizer_catalog}.{optimizer_schema}.opt_config "
                               f"ADD COLUMNS ({col} {typ})")
             print(f"✓ opt_config columns ensured: {list(OPT_CONFIG_ADDED_COLUMNS)}")
 
-    target = f"{factory_catalog}.{factory_schema}"
-    print(f"✓ factory={target}  sandbox_schema={sandbox_schema} (created lazily in each target's catalog)")
+    target = f"{optimizer_catalog}.{optimizer_schema}"
+    print(f"✓ optimizer={target}  sandbox_schema={sandbox_schema} (created lazily in each target's catalog)")
 
     # Record the resolved config where the runtime harness (settings.configure) reads it.
-    cfg = {"factory_catalog": factory_catalog, "factory_schema": factory_schema,
+    cfg = {"optimizer_catalog": optimizer_catalog, "optimizer_schema": optimizer_schema,
            "sandbox_schema": sandbox_schema}
     if compute_cluster_id:
         cfg["compute_cluster_id"] = compute_cluster_id
@@ -100,6 +100,6 @@ def provision(spark, *,
             json.dump(cfg, f, indent=2)
         print(f"✓ runtime config -> {path}")
     except Exception as e:
-        print(f"! could not write runtime config ({e}); set PO_FACTORY_* env or call "
+        print(f"! could not write runtime config ({e}); set PO_OPTIMIZER_* env or call "
               "settings.configure(...) at flow start")
-    return {"factory": target, "sandbox_schema": sandbox_schema}
+    return {"optimizer": target, "sandbox_schema": sandbox_schema}

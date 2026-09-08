@@ -13,14 +13,31 @@ Steps:
 1. **Pin inputs**: resolve each `source_table` to a fixed Delta version (`DESCRIBE HISTORY` →
    latest committed version) so baseline (v1) and candidate (v2) read identical data.
 2. **Clone targets** (`clone_targets`): always `CREATE OR REPLACE` — **never `DROP`** (workspace
-   policies may block DROP). Two modes:
-   - **`validation_tier: sampled` (DEFAULT for large targets)** → pass `sample_percent` so the clone
-     is a deterministic `TABLESAMPLE (n PERCENT) REPEATABLE(seed)` snapshot. A full-rewrite v1 on a
-     180M-row target times out / cold-starts on serverless — a sampled slice validates equivalence
-     fast. Same seed ⇒ _v1/_v2 snapshots identical. **Sample the big TARGET only; pin sources full.**
-   - **`validation_tier: full`** → `SHALLOW CLONE` (zero-copy, whole table). Use on dedicated compute.
-   In both, the clone stays in the target's OWN catalog + sandbox schema, `<origschema>__<table>`
-   name, WITH data (empty target ⇒ wrong merge result).
+   policies may block DROP). **Always call `clone_targets` — NEVER hand-roll the clone.** A hand-written
+   `CREATE TABLE ... PARTITIONED BY (col) AS SELECT * ... TABLESAMPLE` is broken two ways: the
+   `PARTITIONED BY` reprojects the partition column (it can land NULL/misaligned), and a plain
+   `TABLESAMPLE` is **non-deterministic between statements**, so the _v1 and _v2 clones get different
+   rows and equivalence can never match. `clone_targets` avoids both (SHALLOW CLONE, or a `REPEATABLE(seed)`
+   sample). Pick the mode by the **operation**, not just table size:
+
+   | v2 operation | tier | why |
+   |---|---|---|
+   | **Partition reload / partition-scoped** — DELETE-partition+INSERT, dynamic-partition INSERT OVERWRITE, `REPLACE WHERE` | **`full` (SHALLOW CLONE) — REQUIRED** | the op is already partition-bounded and cheap (it touches one partition, not the whole table), and it DEPENDS on the clone's partitioning. Sampling drops the `PARTITIONED BY` and can NULL/misalign the partition column → equivalence diverges even though the v2 logic is correct. |
+   | **Full-table rewrite** — INSERT OVERWRITE whole table, self-join upsert that rewrites everything | **`sampled`** | the baseline materializes the ENTIRE table, which times out on serverless; a `TABLESAMPLE (n PERCENT) REPEATABLE(seed)` slice validates the logic fast. Same seed ⇒ _v1/_v2 identical. Sample the big TARGET only; pin sources full. |
+   | small target (either op) | **`full` (SHALLOW CLONE)** | cheap; exact is best. |
+
+   `full` → `SHALLOW CLONE` (zero-copy metadata clone; **preserves partitioning and exact data**).
+   `sampled` → `clone_targets(..., sample_percent=n)`. The clone stays in the target's OWN catalog +
+   sandbox schema, `<origschema>__<table>` name, WITH data (empty target ⇒ wrong merge result).
+
+   **Sample size for pathological baselines:** equivalence proves LOGICAL equality, not scale — so the
+   sample only needs enough rows to exercise every code path. If the v1 baseline is algorithmically
+   expensive (e.g. `NOT IN` on a composite-key tuple → `BroadcastNestedLoopJoin` LeftAnti, which is
+   O(n×m)), even a 1% slice can run for **over an hour** — that cost is the quadratic algorithm, NOT
+   the data volume and NOT the sample being "too high". Drop the sample much lower (≤0.1% or a fixed
+   small cap) so the slow baseline finishes; the candidate (MERGE) is fast at any size, and the proof
+   still holds. That catastrophic v1 time is exactly the waste the optimization removes — report it as
+   the finding, don't fight it at scale.
 3. **Remap writes**: rewrite the v2 notebook's write targets to their sandbox clones. Verify no
    write points at a production table.
 4. **Persist the manifest** (pinned versions + clone names) to `opt_config`/a run row — do NOT keep

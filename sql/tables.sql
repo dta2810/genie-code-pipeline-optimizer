@@ -1,4 +1,4 @@
--- Factory schema DDL. {{catalog}}/{{schema}} substituted by deploy from settings env vars.
+-- Optimizer schema DDL. {{catalog}}/{{schema}} substituted by deploy from settings env vars.
 
 CREATE SCHEMA IF NOT EXISTS {{catalog}}.{{schema}};
 

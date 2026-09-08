@@ -1,8 +1,8 @@
-"""Portable settings. Runtime resolution order: explicit configure() > env vars > the factory
+"""Portable settings. Runtime resolution order: explicit configure() > env vars > the optimizer
 config file written at provision time (path derived from current_user) > defaults.
 
 Env vars set on a laptop do NOT reach the Databricks runtime, so inside Genie Code the harness
-learns the factory location either from an explicit configure(...) call or from the small config
+learns the optimizer location either from an explicit configure(...) call or from the small config
 file that provision writes to the user's workspace home. Consumers read `settings.X` (or the helper
 functions) at CALL time — never `from .settings import X` — so configure() takes effect everywhere.
 """
@@ -17,9 +17,9 @@ def _env(key: str, default: str) -> str:
 # Sandbox schema: a dedicated schema (inside prod's own catalog) where clones + remapped writes
 # land. Schema-based (not catalog-based) so isolation needs no CREATE CATALOG privilege.
 SANDBOX_SCHEMA = _env("PO_SANDBOX_SCHEMA", "pipeline_opt_sandbox")
-# Factory schema: audit table + config + governance views.
-FACTORY_CATALOG = _env("PO_FACTORY_CATALOG", "main")
-FACTORY_SCHEMA = _env("PO_FACTORY_SCHEMA", "pipeline_opt_factory")
+# Optimizer schema: audit table + config + governance views.
+OPTIMIZER_CATALOG = _env("PO_OPTIMIZER_CATALOG", "main")
+OPTIMIZER_SCHEMA = _env("PO_OPTIMIZER_SCHEMA", "genie_optimizer")
 # Workspace home: where the Genie Code assets live (skills, lib, deploy, sql, v2 notebooks).
 WORKSPACE_HOME = _env("PO_WORKSPACE_HOME", "/Workspace/Users/<you>/genie_code_optimizer")
 # Dedicated cluster for the HEAVY sandbox work (running v1/v2 notebooks + wall-clock benchmark).
@@ -27,10 +27,10 @@ WORKSPACE_HOME = _env("PO_WORKSPACE_HOME", "/Workspace/Users/<you>/genie_code_op
 # the harness falls back to the serverless session (fine at sample scale, but noisy wall-clock).
 COMPUTE_CLUSTER_ID = _env("PO_COMPUTE_CLUSTER_ID", "")
 
-# Where provision records the resolved factory config so the runtime can pick it up without env.
+# Where provision records the resolved optimizer config so the runtime can pick it up without env.
 # A dotfile in the user's workspace home — OUTSIDE the bundle sync root, so `bundle deploy` never
 # deletes it. {user} is filled from current_user at runtime.
-CONFIG_FILE_TMPL = "/Workspace/Users/{user}/.genie_optimizer_factory.json"
+CONFIG_FILE_TMPL = "/Workspace/Users/{user}/.genie_optimizer.json"
 
 
 def _current_user(spark):
@@ -40,10 +40,10 @@ def _current_user(spark):
         return None
 
 
-def _discover_factory(spark):
-    """Find an already-provisioned factory by scanning for its `opt_config` table. Returns
+def _discover_optimizer(spark):
+    """Find an already-provisioned optimizer by scanning for its `opt_config` table. Returns
     (catalog, schema) only when exactly ONE exists (unambiguous) — so a session adopts the
-    deployed factory instead of provisioning a duplicate at the defaults.
+    deployed optimizer instead of provisioning a duplicate at the defaults.
     """
     try:
         rows = spark.sql("SELECT table_catalog, table_schema FROM system.information_schema.tables "
@@ -58,13 +58,13 @@ def config_file_path(user: str) -> str:
     return CONFIG_FILE_TMPL.format(user=user)
 
 
-def configure(*, spark=None, factory_catalog=None, factory_schema=None,
+def configure(*, spark=None, optimizer_catalog=None, optimizer_schema=None,
               sandbox_schema=None, workspace_home=None, compute_cluster_id=None) -> dict:
-    """Set the factory location for this runtime. Explicit args win; otherwise, if `spark` is
-    given, derive the workspace home from current_user and load factory_catalog/schema/sandbox/
+    """Set the optimizer location for this runtime. Explicit args win; otherwise, if `spark` is
+    given, derive the workspace home from current_user and load optimizer_catalog/schema/sandbox/
     compute from the provision-written config file (if present). Idempotent. Call once at flow start.
     """
-    global FACTORY_CATALOG, FACTORY_SCHEMA, SANDBOX_SCHEMA, WORKSPACE_HOME, COMPUTE_CLUSTER_ID
+    global OPTIMIZER_CATALOG, OPTIMIZER_SCHEMA, SANDBOX_SCHEMA, WORKSPACE_HOME, COMPUTE_CLUSTER_ID
     loaded, disc = {}, {}
     if spark is not None:
         user = _current_user(spark)
@@ -76,13 +76,13 @@ def configure(*, spark=None, factory_catalog=None, factory_schema=None,
                     loaded = json.load(f)
             except Exception:
                 loaded = {}
-        # No explicit/file factory -> adopt an existing one instead of falling to defaults.
-        if not factory_catalog and "factory_catalog" not in loaded:
-            d = _discover_factory(spark)
+        # No explicit/file optimizer -> adopt an existing one instead of falling to defaults.
+        if not optimizer_catalog and "optimizer_catalog" not in loaded:
+            d = _discover_optimizer(spark)
             if d:
-                disc = {"factory_catalog": d[0], "factory_schema": d[1]}
-    FACTORY_CATALOG = factory_catalog or loaded.get("factory_catalog") or disc.get("factory_catalog") or FACTORY_CATALOG
-    FACTORY_SCHEMA = factory_schema or loaded.get("factory_schema") or disc.get("factory_schema") or FACTORY_SCHEMA
+                disc = {"optimizer_catalog": d[0], "optimizer_schema": d[1]}
+    OPTIMIZER_CATALOG = optimizer_catalog or loaded.get("optimizer_catalog") or disc.get("optimizer_catalog") or OPTIMIZER_CATALOG
+    OPTIMIZER_SCHEMA = optimizer_schema or loaded.get("optimizer_schema") or disc.get("optimizer_schema") or OPTIMIZER_SCHEMA
     SANDBOX_SCHEMA = sandbox_schema or loaded.get("sandbox_schema", SANDBOX_SCHEMA)
     WORKSPACE_HOME = workspace_home or loaded.get("workspace_home", WORKSPACE_HOME)
     COMPUTE_CLUSTER_ID = compute_cluster_id or loaded.get("compute_cluster_id", COMPUTE_CLUSTER_ID)
@@ -90,20 +90,40 @@ def configure(*, spark=None, factory_catalog=None, factory_schema=None,
 
 
 def resolved() -> dict:
-    """The factory location currently in effect."""
-    return {"factory_catalog": FACTORY_CATALOG, "factory_schema": FACTORY_SCHEMA,
+    """The optimizer location currently in effect."""
+    return {"optimizer_catalog": OPTIMIZER_CATALOG, "optimizer_schema": OPTIMIZER_SCHEMA,
             "sandbox_schema": SANDBOX_SCHEMA, "workspace_home": WORKSPACE_HOME,
             "compute_cluster_id": COMPUTE_CLUSTER_ID}
 
 
-def factory_fqn(name: str) -> str:
-    """Fully-qualified name inside the factory schema."""
-    return f"{FACTORY_CATALOG}.{FACTORY_SCHEMA}.{name}"
+def optimizer_fqn(name: str) -> str:
+    """Fully-qualified name inside the optimizer schema."""
+    return f"{OPTIMIZER_CATALOG}.{OPTIMIZER_SCHEMA}.{name}"
 
 
-def optimized_folder() -> str:
-    """Workspace folder for generated v2 notebooks (derives from WORKSPACE_HOME)."""
-    return f"{WORKSPACE_HOME.rstrip('/')}/optimized"
+import re as _re
+
+
+def _safe(name: str) -> str:
+    """A workspace-path-safe folder name for a job (spaces/specials -> _)."""
+    return _re.sub(r"[^0-9A-Za-z._-]+", "_", (name or "job").strip()).strip("_") or "job"
+
+
+def job_home(job_name: str) -> str:
+    """Per-job workspace folder: everything the optimizer produces for a job lives here."""
+    return f"{WORKSPACE_HOME.rstrip('/')}/jobs/{_safe(job_name)}"
+
+
+def optimized_folder(job_name: str | None = None) -> str:
+    """Folder for generated v2 candidate notebooks. Per-job when a name is given
+    (`.../jobs/<job>/optimized`), else the shared root (back-compat)."""
+    return f"{job_home(job_name)}/optimized" if job_name else f"{WORKSPACE_HOME.rstrip('/')}/optimized"
+
+
+def validation_folder(job_name: str) -> str:
+    """Folder for the dedicated per-notebook validation notebooks (clone+run+equivalence+benchmark,
+    one operation per cell) — run on the dedicated cluster, never inline in the chat turn."""
+    return f"{job_home(job_name)}/validation"
 
 
 def sandbox_fqn(catalog: str, schema: str, table: str) -> str:

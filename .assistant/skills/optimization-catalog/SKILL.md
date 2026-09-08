@@ -1,6 +1,6 @@
 ---
 name: optimization-catalog
-description: Reference catalog of the pipeline optimization techniques the factory can apply. NOT an @-entry point — consumed by perf-profile (symptom → technique) and optimize-notebook (technique → transformation recipe). Each technique has its own resource file with symptom, detection signal, before→after recipe, equivalence risk, and guard notes. Load ONLY the resource file for the chosen technique.
+description: Reference catalog of the pipeline optimization techniques the optimizer can apply. NOT an @-entry point — consumed by perf-profile (symptom → technique) and optimize-notebook (technique → transformation recipe). Each technique has its own resource file with symptom, detection signal, before→after recipe, equivalence risk, and guard notes. Load ONLY the resource file for the chosen technique.
 ---
 
 # optimization-catalog

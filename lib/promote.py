@@ -4,6 +4,8 @@ Scope (this iteration): create a NEW job (or update in place) whose task points 
 No PR/DAB. Default is a NEW job so the original is untouched and rollback is just deleting the new
 job. Manipulates the job settings dict directly (version-safe) via the raw REST API.
 """
+from datetime import datetime, timezone
+
 from databricks.sdk import WorkspaceClient
 
 
@@ -32,7 +34,13 @@ def promote_notebook(job_id, task_key: str, v2_path: str, *, new_job: bool = Tru
         raise ValueError(f"No notebook task {task_key!r} found in job {job_id}")
 
     if new_job:
-        body["name"] = f"{body.get('name', 'job')} (genie-opt)"
+        # Dated name so successive promotions don't collide + the original stays traceable.
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+        base = body.get("name", "job")
+        body["name"] = f"{base} (genie-opt {stamp})"
+        body["description"] = (f"Optimized from job {job_id} by genie_code_optimizer "
+                               f"({datetime.now(timezone.utc).isoformat(timespec='minutes')}). "
+                               f"Task {task_key} -> {v2_path}. Original job untouched.")
         res = w.api_client.do("POST", "/api/2.2/jobs/create", body=body)
         return {"mode": "new_job", "source_job_id": str(job_id),
                 "new_job_id": res.get("job_id"), "task_key": task_key, "notebook_path": v2_path}

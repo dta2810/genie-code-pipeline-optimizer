@@ -1,4 +1,4 @@
-"""Append-only audit logging for the optimization factory. Import from every skill."""
+"""Append-only audit logging for the pipeline optimizer. Import from every skill."""
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -45,12 +45,12 @@ def audit_log(spark, *, job, notebook, step, status, change_type=None,
         "notebook_path": notebook_path, "insight": insight,
     }
     spark.createDataFrame([row], schema).write.mode("append").saveAsTable(
-        settings.factory_fqn("optimization_audit"))
+        settings.optimizer_fqn("optimization_audit"))
 
 
 def audit_trail(spark, *, job, notebook=None) -> list[dict]:
     """Read the audit events for a job (optionally one notebook), oldest first."""
-    tbl = settings.factory_fqn("optimization_audit")
+    tbl = settings.optimizer_fqn("optimization_audit")
     where = f"job = '{job}'" + (f" AND notebook = '{notebook}'" if notebook else "")
     rows = spark.sql(f"SELECT step, status, event_ts, insight FROM {tbl} "
                      f"WHERE {where} ORDER BY event_ts").collect()
@@ -68,7 +68,7 @@ def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
     inline) impossible to promote past. Call right before GATE 2.
     """
     # opt_config must be persisted too (sync_config was actually called, not just kept in memory).
-    cfg_tbl = settings.factory_fqn("opt_config")
+    cfg_tbl = settings.optimizer_fqn("opt_config")
     n_cfg = spark.sql(f"SELECT count(*) c FROM {cfg_tbl} "
                       f"WHERE job_name = '{job}' AND notebook_path = '{notebook}'").collect()[0]["c"]
     if not n_cfg:

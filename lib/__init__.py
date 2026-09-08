@@ -1,1 +1,1 @@
-"""Pipeline Optimization Factory — importable harness (settings, audit, config, sandbox, equivalence)."""
+"""Genie Code Pipeline Optimizer — importable harness (settings, audit, config, sandbox, equivalence)."""

@@ -11,8 +11,8 @@ workspace_home: /Workspace/Users/<you>/genie_code_optimizer
 # isolated runs land, named <origschema>__<table>. Prod is never touched.
 sandbox_schema: pipeline_opt_sandbox
 
-# Factory schema: audit table + config + governance views.
-factory_schema: <catalog>.pipeline_opt_factory
+# Optimizer schema: audit table + config + governance views.
+optimizer_schema: <catalog>.genie_optimizer
 
 # Compute used for baseline vs candidate (must match to compare perf fairly).
 compute:

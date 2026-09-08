@@ -1,18 +1,18 @@
-# One-shot provisioning job: creates the factory schema + opt_config + optimization_audit +
+# One-shot provisioning job: creates the optimizer schema + opt_config + optimization_audit +
 # get_opt_config + governance views by running deploy/00_deploy.py (which calls provision.py).
 # Idempotent (CREATE ... IF NOT EXISTS / OR REPLACE) — safe to re-run. Serverless (no cluster spec).
-#   databricks bundle run provision_factory -t latam
+#   databricks bundle run provision_optimizer -t latam
 resources:
   jobs:
-    provision_factory:
-      name: "[${bundle.target}] genie-code-optimizer · provision factory"
+    provision_optimizer:
+      name: "[${bundle.target}] genie-code-optimizer · provision optimizer"
       tasks:
         - task_key: provision
           notebook_task:
             notebook_path: ../deploy/00_deploy.py
             base_parameters:
-              factory_catalog: ${var.factory_catalog}
-              factory_schema: ${var.factory_schema}
+              optimizer_catalog: ${var.optimizer_catalog}
+              optimizer_schema: ${var.optimizer_schema}
               sandbox_schema: ${var.sandbox_schema}
               compute_cluster_id: ${var.compute_cluster_id}
               create_catalogs: ${var.create_catalogs}

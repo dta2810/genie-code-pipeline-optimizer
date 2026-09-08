@@ -1,6 +1,6 @@
 ---
 name: optimize-pipeline
-description: Entry point for the Pipeline Optimization Factory. Invoke with @optimize-pipeline to optimize a Databricks job's notebooks safely and provably — the same result as the baseline (before == after) and faster/cheaper, every step audited. Give it a job name. Self-contained: it orchestrates detect-tables, perf-profile, sandbox-setup, optimize-notebook, equivalence-check and perf-benchmark, with two human approval gates. Use this instead of relying on project instructions.
+description: Entry point for the Genie Code Pipeline Optimizer. Invoke with @optimize-pipeline to optimize a Databricks job's notebooks safely and provably — the same result as the baseline (before == after) and faster/cheaper, every step audited. Give it a job name. Self-contained: it orchestrates detect-tables, perf-profile, sandbox-setup, optimize-notebook, equivalence-check and perf-benchmark, with two human approval gates. Use this instead of relying on project instructions.
 ---
 
 # optimize-pipeline (orchestrator)
@@ -14,13 +14,13 @@ sub-skills' `scripts/` — do NOT reimplement their logic inline.
 
 ## Flow
 
-**0. Bootstrap config.** First point the harness at THIS deployment's factory (env vars set on a
+**0. Bootstrap config.** First point the harness at THIS deployment's optimizer (env vars set on a
 laptop do not reach the Databricks runtime), then draft the config from the job name:
 ```python
 from lib import settings
-settings.configure(spark=spark)          # explicit > config file > AUTO-DISCOVERS an existing factory > defaults
-print(settings.resolved())               # confirm it points at the DEPLOYED factory, not defaults
-# (or pass them explicitly: settings.configure(factory_catalog=..., factory_schema=...))
+settings.configure(spark=spark)          # explicit > config file > AUTO-DISCOVERS an existing optimizer > defaults
+print(settings.resolved())               # confirm it points at the DEPLOYED optimizer, not defaults
+# (or pass them explicitly: settings.configure(optimizer_catalog=..., optimizer_schema=...))
 
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 from lib.perf import rank_notebooks
@@ -28,7 +28,7 @@ from lib.compute import resolve_compute
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
 print(resolve_compute(cfg))              # which cluster runs the HEAVY sandbox work
 ```
-Do NOT provision the factory if `resolved()` already points at a real deployed schema — provisioning
+Do NOT provision the optimizer if `resolved()` already points at a real deployed schema — provisioning
 is a one-time deploy step (`deploy/00_deploy`), and it now refuses to create a duplicate anyway.
 Only provision on a genuinely fresh workspace.
 Show the drafted config (notebooks + compute + sandbox_schema) and confirm the **job** with the user.
@@ -65,6 +65,20 @@ sync_config(spark, cfg)                    # persist: selected -> pending, the r
 Selected notebooks are `pending`; the rest are `skipped` (persisted, so a later run can pick them
 up — `promoted`/`blocked` history is never overwritten).
 
+**Run the heavy phases (5–8) in a DEDICATED NOTEBOOK on the cluster — NEVER inline in this chat turn.**
+Big clones, full rewrites and `EXCEPT ALL` **time out** when run as inline cells in the serverless chat
+session, and it loses cell state if the compute restarts (this is the #1 cause of stuck runs). Instead,
+**write a validation notebook — one operation per cell** — to `settings.validation_folder(job_name)`
+(`<ntb>_validate_<ts>`), and **submit it to the resolved cluster** with `lib.compute.run_notebook`. It
+imports the harness (`sandbox`, `equivalence`, `audit`, `metrics`) and does clone → run v1 → run v2 →
+equivalence → benchmark, each in its own cell. You read its result, you do not run the heavy SQL in the turn.
+
+**Per-job folder layout** — everything the optimizer produces for a job lives under one folder,
+`settings.job_home(job_name)` = `<WORKSPACE_HOME>/jobs/<job_name>/`:
+- `optimized/` — v2 candidate notebooks, `<ntb>_genie_opt_<ts>` (the timestamp is the version; iterations coexist).
+- `validation/` — the dedicated run notebooks above, `<ntb>_validate_<ts>`.
+Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; original untouched) via `promote_notebook`.
+
 **For each SELECTED notebook (`pending_notebooks(cfg)`), in DAG order:**
 
 1. **`@detect-tables`** — read the notebook, reason out `source_tables` (to pin) + `target_tables`
@@ -81,16 +95,17 @@ up — `promoted`/`blocked` history is never overwritten).
    own catalog (WITH data for MERGE), pin inputs via time-travel, remap all writes to the sandbox.
    Verify no write hits production.
 6. **Run** the baseline (v1) and the candidate (v2) end-to-end against the sandbox on the **same
-   compute** — the dedicated cluster from `resolve_compute(cfg)`, not this serverless session.
-   Materialize the two sandbox-remapped notebooks to the workspace and submit each on the cluster:
+   compute** — the dedicated cluster from `resolve_compute(cfg)`, via the dedicated validation notebook
+   (above), NOT inline in this turn:
    ```python
    from lib.compute import resolve_compute, run_notebook
+   from lib import settings
    cid = resolve_compute(cfg)["cluster_id"]
-   if cid:
-       run_notebook(v1_sandbox_path, cid)   # jobs runs submit; clean execution_duration
-       run_notebook(v2_sandbox_path, cid)
-   # else: run inline on the session (sampled sandbox only) and label wall-clock indicative-only
+   validation_nb = f"{settings.validation_folder(cfg['job_name'])}/{ntb}_validate_{ts}"
+   # ... write validation_nb (one op per cell: clone via clone_targets, run v1, run v2, equivalence, benchmark) ...
+   run_notebook(validation_nb, cid)   # jobs runs submit on the cluster; no inline timeout
    ```
+   If no cluster resolves (serverless only), keep the sample small and label wall-clock indicative-only.
 7. **PROTOCOL gate + `@equivalence-check`.** First prove the candidate did not change the table
    contract, then prove the content matches:
    ```python

@@ -10,7 +10,7 @@ from . import settings
 
 def _config_table() -> str:
     """opt_config FQN, resolved at call time so settings.configure() takes effect."""
-    return settings.factory_fqn("opt_config")
+    return settings.optimizer_fqn("opt_config")
 
 DEFAULTS = {"epsilon": 1e-6, "min_gain": 0.20, "benchmark_runs": 3, "validation_tier": "sampled",
             "compute_cluster_id": None}
@@ -86,7 +86,7 @@ def bootstrap_from_job(job_name: str, *, sandbox_schema: str | None = None,
         "job_name": s.name,
         "job_id": str(job.job_id),
         "sandbox_schema": sandbox_schema,
-        "optimized_folder": optimized_folder or f"{settings.optimized_folder()}/{s.name}",
+        "optimized_folder": optimized_folder or settings.optimized_folder(s.name),
         "compute": _compute_of(s),
         "defaults": defaults,
         "notebooks": notebooks,
