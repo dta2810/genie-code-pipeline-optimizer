@@ -36,6 +36,20 @@ def _current_user(spark):
         return None
 
 
+def _discover_factory(spark):
+    """Find an already-provisioned factory by scanning for its `opt_config` table. Returns
+    (catalog, schema) only when exactly ONE exists (unambiguous) — so a session adopts the
+    deployed factory instead of provisioning a duplicate at the defaults.
+    """
+    try:
+        rows = spark.sql("SELECT table_catalog, table_schema FROM system.information_schema.tables "
+                         "WHERE table_name = 'opt_config'").collect()
+    except Exception:
+        return None
+    cands = [(r["table_catalog"], r["table_schema"]) for r in rows]
+    return cands[0] if len(cands) == 1 else None
+
+
 def config_file_path(user: str) -> str:
     return CONFIG_FILE_TMPL.format(user=user)
 
@@ -47,7 +61,7 @@ def configure(*, spark=None, factory_catalog=None, factory_schema=None,
     from the provision-written config file (if present). Idempotent. Call once at flow start.
     """
     global FACTORY_CATALOG, FACTORY_SCHEMA, SANDBOX_SCHEMA, WORKSPACE_HOME
-    loaded = {}
+    loaded, disc = {}, {}
     if spark is not None:
         user = _current_user(spark)
         if user:
@@ -58,8 +72,13 @@ def configure(*, spark=None, factory_catalog=None, factory_schema=None,
                     loaded = json.load(f)
             except Exception:
                 loaded = {}
-    FACTORY_CATALOG = factory_catalog or loaded.get("factory_catalog", FACTORY_CATALOG)
-    FACTORY_SCHEMA = factory_schema or loaded.get("factory_schema", FACTORY_SCHEMA)
+        # No explicit/file factory -> adopt an existing one instead of falling to defaults.
+        if not factory_catalog and "factory_catalog" not in loaded:
+            d = _discover_factory(spark)
+            if d:
+                disc = {"factory_catalog": d[0], "factory_schema": d[1]}
+    FACTORY_CATALOG = factory_catalog or loaded.get("factory_catalog") or disc.get("factory_catalog") or FACTORY_CATALOG
+    FACTORY_SCHEMA = factory_schema or loaded.get("factory_schema") or disc.get("factory_schema") or FACTORY_SCHEMA
     SANDBOX_SCHEMA = sandbox_schema or loaded.get("sandbox_schema", SANDBOX_SCHEMA)
     WORKSPACE_HOME = workspace_home or loaded.get("workspace_home", WORKSPACE_HOME)
     return resolved()

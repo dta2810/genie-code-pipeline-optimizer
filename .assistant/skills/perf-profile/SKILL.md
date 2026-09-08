@@ -24,3 +24,9 @@ Steps:
 4. Write the bottleneck profile to the factory schema + `audit_log(step="perf_profile", insight=...)`.
 
 Output: a structured bottleneck profile + a short NL insight (where and why it is slow).
+
+**Propose the FULL applicable stack up front — proactively, not on request.** For the hotspot, list
+every technique that applies (catalog + other-skill), each tagged with its risk tier — e.g. a
+full-rewrite upsert on a big table warrants MERGE (the core fix) **plus** Z-ORDER on the merge key,
+`optimizeWrite`/`autoCompact`, and a BROADCAST hint. Don't surface just one and wait for the user to
+ask "what else?" — present the stack, let the human pick at GATE 1. All still pass the same gates.

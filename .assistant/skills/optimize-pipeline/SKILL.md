@@ -18,13 +18,17 @@ sub-skills' `scripts/` — do NOT reimplement their logic inline.
 laptop do not reach the Databricks runtime), then draft the config from the job name:
 ```python
 from lib import settings
-settings.configure(spark=spark)          # loads factory catalog/schema/home written by provision
+settings.configure(spark=spark)          # explicit > config file > AUTO-DISCOVERS an existing factory > defaults
+print(settings.resolved())               # confirm it points at the DEPLOYED factory, not defaults
 # (or pass them explicitly: settings.configure(factory_catalog=..., factory_schema=...))
 
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 from lib.perf import rank_notebooks
 cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
 ```
+Do NOT provision the factory if `resolved()` already points at a real deployed schema — provisioning
+is a one-time deploy step (`deploy/00_deploy`), and it now refuses to create a duplicate anyway.
+Only provision on a genuinely fresh workspace.
 Show the drafted config (notebooks + compute + sandbox_schema) and confirm the **job** with the user.
 
 **0a. Rank the hotspots (light, read-only).** Before asking the user to choose, cheaply rank the

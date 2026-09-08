@@ -42,6 +42,21 @@ def provision(spark, *,
     resolved config to the user's runtime config file so the harness needs no process env.
     """
     sql_dir = sql_dir or _sql_dir()
+
+    # Guard against a duplicate factory: if opt_config already exists elsewhere, point at it.
+    target = f"{factory_catalog}.{factory_schema}"
+    try:
+        existing = [f"{r['table_catalog']}.{r['table_schema']}" for r in spark.sql(
+            "SELECT table_catalog, table_schema FROM system.information_schema.tables "
+            "WHERE table_name = 'opt_config'").collect()]
+        other = [e for e in existing if e != target]
+        if other:
+            print(f"! A factory already exists at {other} — NOT creating a duplicate at {target}. "
+                  f"Use settings.configure() to adopt it (it auto-discovers), or pass that schema.")
+            return {"factory": other[0], "sandbox_schema": sandbox_schema, "skipped": True}
+    except Exception:
+        pass
+
     if create_catalogs:
         spark.sql(f"CREATE CATALOG IF NOT EXISTS {factory_catalog}")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {factory_catalog}.{factory_schema}")

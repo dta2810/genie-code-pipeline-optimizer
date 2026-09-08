@@ -20,19 +20,31 @@ def pin_inputs(spark, source_tables: list[str]) -> dict[str, int]:
     return versions
 
 
-def clone_targets(spark, target_tables: list[str], suffix: str = "") -> dict[str, str]:
-    """Shallow-clone each target into the sandbox schema WITH current data (needed for MERGE).
+def clone_targets(spark, target_tables: list[str], suffix: str = "",
+                  sample_percent: float | None = None, seed: int = 42) -> dict[str, str]:
+    """Clone each target into the sandbox schema WITH data (needed for MERGE). Always
+    CREATE OR REPLACE — never DROP (workspace policies may block DROP).
 
-    The sandbox schema lives inside the target's OWN catalog, so no CREATE CATALOG privilege
-    is needed. `suffix` lets the caller make independent clones per run (e.g. "_v1"/"_v2") from
-    the same source state, so baseline and candidate each write into a fresh copy.
+    - Full clone (default): `SHALLOW CLONE` — metadata-only, cheap, but v1's full-rewrite then
+      materializes the whole table, which times out on serverless for very large tables.
+    - Sampled clone (`sample_percent` set, e.g. from `validation_tier: sampled`): a deterministic
+      `TABLESAMPLE (n PERCENT) REPEATABLE(seed)` snapshot, so a big target is validated on a
+      serverless-friendly slice. The SAME seed makes the _v1/_v2 snapshots identical, so equivalence
+      is still v1-vs-v2 on one input. Sample the big TARGET only; pin the (small) sources full.
+
+    The sandbox schema lives inside the target's OWN catalog (no CREATE CATALOG needed). `suffix`
+    makes independent clones per run (e.g. "_v1"/"_v2") from the same source state.
     """
     mapping = {}
     for t in target_tables:
         catalog, schema, table = _parts(t)
         dst = sandbox_fqn(catalog, schema, f"{table}{suffix}")
         spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{settings.SANDBOX_SCHEMA}")
-        spark.sql(f"CREATE OR REPLACE TABLE {dst} SHALLOW CLONE {t}")
+        if sample_percent:
+            spark.sql(f"CREATE OR REPLACE TABLE {dst} AS "
+                      f"SELECT * FROM {t} TABLESAMPLE ({sample_percent} PERCENT) REPEATABLE ({seed})")
+        else:
+            spark.sql(f"CREATE OR REPLACE TABLE {dst} SHALLOW CLONE {t}")
         mapping[t] = dst
     return mapping
 
