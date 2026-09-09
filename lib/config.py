@@ -51,19 +51,36 @@ def _compute_of(settings) -> dict:
     return {}
 
 
-def bootstrap_from_job(job_name: str, *, sandbox_schema: str | None = None,
+def _prior_status(spark, job_name: str) -> dict:
+    """{notebook_path: status} from any persisted opt_config for this job (empty if none)."""
+    try:
+        rows = spark.sql(f"SELECT notebook_path, status FROM {_config_table()} "
+                         f"WHERE job_name = '{job_name}'").collect()
+        return {r["notebook_path"]: r["status"] for r in rows}
+    except Exception:  # table not provisioned yet / no rows -> fresh start
+        return {}
+
+
+def bootstrap_from_job(job_name: str, *, spark=None, sandbox_schema: str | None = None,
                        optimized_folder: str | None = None) -> dict:
-    """job_name -> Jobs API -> draft opt_config (notebooks in DAG order, tables left for detect-tables)."""
+    """job_name -> Jobs API -> draft opt_config (notebooks in DAG order, tables left for detect-tables).
+
+    Pass `spark` to hydrate resolved history: notebooks already `promoted`/`blocked` in a prior run
+    keep that status (the rest reset to `pending`), so selection stays resumable across sessions.
+    """
     sandbox_schema = sandbox_schema or settings.SANDBOX_SCHEMA
     w = WorkspaceClient()
     job = _resolve_job(w, job_name)
     s = job.settings
     order = _dag_order(s.tasks or [])
+    prior = _prior_status(spark, s.name) if spark is not None else {}
 
     notebooks = []
     for t in s.tasks or []:
         if not t.notebook_task:  # only notebook tasks are optimized here
             continue
+        # Carry forward a terminal status from a prior run; otherwise start pending.
+        prev = prior.get(t.notebook_task.notebook_path)
         notebooks.append({
             "notebook_path": t.notebook_task.notebook_path,
             "task_key": t.task_key,     # attributes runtime for hotspot ranking
@@ -73,7 +90,7 @@ def bootstrap_from_job(job_name: str, *, sandbox_schema: str | None = None,
             "target_tables": [],        # detect-tables fills (to clone)
             "equivalence_keys": [],
             "nondeterministic": None,   # detect-tables sets
-            "status": "pending",
+            "status": prev if prev in ("promoted", "blocked") else "pending",
         })
     notebooks.sort(key=lambda x: x["dag_order"])
 
@@ -155,3 +172,23 @@ def pending_notebooks(cfg: dict) -> list[dict]:
     """Selected notebooks still to process, in DAG order (status == 'pending')."""
     return sorted((n for n in cfg["notebooks"] if n["status"] == "pending"),
                   key=lambda x: x["dag_order"])
+
+
+_TERMINAL = ("promoted", "blocked", "skipped", "pending")
+
+
+def set_notebook_status(spark, job_name: str, notebook_path: str, status: str) -> None:
+    """Advance ONE notebook's lifecycle status in opt_config so the table stays a truthful progress
+    board (not just the audit trail). Written by the flow: `promote` -> 'promoted', any gate STOP ->
+    'blocked'. Also mirrors it into the in-memory cfg if the caller keeps one. RAISES if no row.
+    """
+    if status not in _TERMINAL:
+        raise ValueError(f"status must be one of {_TERMINAL}, got {status!r}")
+    table = _config_table()
+    n = spark.sql(f"SELECT count(*) c FROM {table} WHERE job_name = '{job_name}' "
+                  f"AND notebook_path = '{notebook_path}'").collect()[0]["c"]
+    if not n:
+        raise ValueError(f"No opt_config row for {job_name}/{notebook_path} to set status={status!r} "
+                         "— sync_config was never called.")
+    spark.sql(f"UPDATE {table} SET status = '{status}' WHERE job_name = '{job_name}' "
+              f"AND notebook_path = '{notebook_path}'")

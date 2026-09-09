@@ -47,4 +47,4 @@ targets:
       optimizer_schema: genie_optimizer_v1
       sandbox_schema: genie_optimizer_v1_sandbox
       create_catalogs: "false"
-      compute_cluster_id: "0618-232249-z1lgrdvh"   # gen_ai_call_analysis_cluster (DBR 16.4, single-user)
+      compute_cluster_id: "0909-163257-futv394w"   # dedicated cluster for heavy sandbox runs + benchmark

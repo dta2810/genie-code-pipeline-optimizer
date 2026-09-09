@@ -69,12 +69,18 @@ def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
     """
     # opt_config must be persisted too (sync_config was actually called, not just kept in memory).
     cfg_tbl = settings.optimizer_fqn("opt_config")
-    n_cfg = spark.sql(f"SELECT count(*) c FROM {cfg_tbl} "
-                      f"WHERE job_name = '{job}' AND notebook_path = '{notebook}'").collect()[0]["c"]
-    if not n_cfg:
+    cfg_rows = spark.sql(f"SELECT status FROM {cfg_tbl} "
+                         f"WHERE job_name = '{job}' AND notebook_path = '{notebook}'").collect()
+    if not cfg_rows:
         raise ValueError(
             f"Promotion BLOCKED: opt_config has no row for {job}/{notebook} — sync_config was "
             "never called (config kept only in memory). Persist it before promoting.")
+    status = cfg_rows[0]["status"]
+    # A 'skipped' notebook was never selected this run — promoting it means selection was bypassed.
+    if status == "skipped":
+        raise ValueError(
+            f"Promotion BLOCKED: {job}/{notebook} is 'skipped' in opt_config — it was not selected "
+            "for this run. Call select_notebooks + sync_config to mark it 'pending' first.")
 
     trail = audit_trail(spark, job=job, notebook=notebook)
     ok = {r["step"] for r in trail if r["status"] == "succeeded"}
@@ -84,7 +90,8 @@ def assert_audited(spark, *, job, notebook, required=REQUIRED_STEPS) -> dict:
             f"Promotion BLOCKED: no `succeeded` audit trail for {missing} on {job}/{notebook}. "
             "The harness (audit_step/audit_log) was not used — re-run the flow through the "
             "wrappers so every step is recorded, then promote.")
-    return {"audited": True, "steps_recorded": sorted(ok), "events": len(trail), "config_rows": n_cfg}
+    return {"audited": True, "steps_recorded": sorted(ok), "events": len(trail),
+            "config_status": status}
 
 
 @contextmanager

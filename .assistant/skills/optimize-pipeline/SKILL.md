@@ -25,9 +25,13 @@ print(settings.resolved())               # confirm it points at the DEPLOYED opt
 from lib.config import bootstrap_from_job, select_notebooks, sync_config, pending_notebooks
 from lib.perf import rank_notebooks
 from lib.compute import resolve_compute
-cfg = bootstrap_from_job("<job_name>")   # Jobs API -> notebooks in DAG order
+cfg = bootstrap_from_job("<job_name>", spark=spark)  # Jobs API -> notebooks in DAG order
 print(resolve_compute(cfg))              # which cluster runs the HEAVY sandbox work
 ```
+**Pass `spark=spark` to `bootstrap_from_job`** so it hydrates prior status: notebooks already
+`promoted`/`blocked` in an earlier session are carried forward (and left alone by selection), while
+the rest reset to `pending`. This is what makes the task **resumable** — a fresh session picks up
+exactly the notebooks still to do, without re-touching what was already promoted.
 Do NOT provision the optimizer if `resolved()` already points at a real deployed schema — provisioning
 is a one-time deploy step (`deploy/00_deploy`), and it now refuses to create a duplicate anyway.
 Only provision on a genuinely fresh workspace.
@@ -113,7 +117,8 @@ Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; origina
    assert_no_protocol_change(spark, v1_clone, v2_clone)   # RAISES on any reader/writer/feature bump
    ```
    Then counts → column fingerprint → `EXCEPT ALL` both ways, step-by-step, with `epsilon`. Both are
-   HARD gates: any protocol bump or divergence → write insight, STOP (no promotion).
+   HARD gates: any protocol bump or divergence → write insight, mark the notebook blocked
+   (`set_notebook_status(spark, job_name, notebook_path, "blocked")`), STOP (no promotion).
 8. **`@perf-benchmark`** — median of N runs **on the dedicated cluster** (`benchmark_on_cluster`, warm,
    `execution_duration` only); report the gain vs `min_gain`. A gain below `min_gain` is a **signal to
    the human, not an automatic block** — surface it clearly. Equivalence is the hard gate; perf is
@@ -121,7 +126,8 @@ Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; origina
    (rows/files rewritten) instead. If the human promotes a below-threshold candidate for correctness or
    maintainability (not raw speed), say so explicitly and record that rationale in the audit insight.
 9. **`@security-review`** — LATE security gate on the v2 (secrets, injection, access/PII broadening,
-   writes outside the sandbox, unsafe UDF/external calls, cost blowups). Any finding → STOP, no promotion.
+   writes outside the sandbox, unsafe UDF/external calls, cost blowups). Any finding → write insight,
+   `set_notebook_status(spark, job_name, notebook_path, "blocked")`, STOP, no promotion.
 10. **NO-AUDIT-NO-PROMOTE gate.** Before offering promotion, prove the run was actually recorded:
     ```python
     from lib.audit import assert_audited, audit_trail
@@ -133,10 +139,13 @@ Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; origina
 11. **GATE 2: wait for human approval**, then promote via the Jobs JSON (this iteration: NO PR/DAB):
     ```python
     from lib.promote import promote_notebook
-    promote_notebook(job_id, task_key, v2_path, new_job=True)   # new job; original untouched
+    promote_notebook(job_id, task_key, v2_path, new_job=True,
+                     spark=spark, job_name=job_name, source_notebook_path=notebook_path)
     ```
     `new_job=True` clones the job with the task repointed to the v2 (rollback = delete the new job);
-    `new_job=False` updates the job in place. Record the outcome with `audit_log(step="promote", ...)`.
+    `new_job=False` updates the job in place. **Pass `spark`/`job_name`/`source_notebook_path`** so
+    promotion also flips `opt_config.status` to `promoted` (do not update it by hand). Record the
+    outcome with `audit_log(step="promote", ...)`.
 
 ## Audit contract (every step)
 **Use the harness wrappers — do NOT reimplement their logic inline.** The wrappers (`lib/` +
