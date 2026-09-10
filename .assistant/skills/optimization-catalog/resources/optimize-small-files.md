@@ -18,19 +18,22 @@ OPTIMIZE t;                       -- bin-packs small files
 -- (add ZORDER BY (...) only if clustering is also warranted)
 ```
 
-Prevent new small files at write time:
-
-```python
-# optimized writes + auto-compaction on the target table
-spark.conf.set("spark.databricks.delta.optimizeWrite.enabled", "true")
-spark.conf.set("spark.databricks.delta.autoCompact.enabled", "true")
-```
+Prevent new small files at write time. **On serverless / Spark Connect prefer the table
+`TBLPROPERTIES` form — `spark.conf.set(...)` for a session conf raises `CONFIG_NOT_AVAILABLE`
+and fails the task.** Set it once on the target table instead:
 
 ```sql
 ALTER TABLE t SET TBLPROPERTIES (
   'delta.autoOptimize.optimizeWrite' = 'true',
   'delta.autoOptimize.autoCompact'   = 'true'
 );
+```
+
+Session-conf form (classic compute only — do NOT emit in a serverless job notebook):
+
+```python
+spark.conf.set("spark.databricks.delta.optimizeWrite.enabled", "true")
+spark.conf.set("spark.databricks.delta.autoCompact.enabled", "true")
 ```
 
 Anti-pattern to remove: `.repartition(N)` before write (unnecessary full shuffle) — use

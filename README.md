@@ -155,7 +155,8 @@ genie-code-pipeline-optimizer/
 │   ├── optimization-catalog/       # reference recipes (starting set, not a cage)
 │   ├── optimize-notebook/          # generate v2 <ntb>_genie_opt_<ts> (HITL)
 │   ├── sandbox-setup/              # clone targets + pin inputs + remap writes
-│   ├── equivalence-check/          # counts → fingerprint → EXCEPT ALL, step-by-step
+│   ├── equivalence-check/          # counts → fingerprint → EXCEPT ALL, step-by-step (per notebook)
+│   ├── flow-validate/              # whole-job equivalence: orig job DAG vs opt job DAG, one snapshot
 │   ├── perf-benchmark/             # fair perf measurement (median of N, advisory)
 │   └── security-review/            # late security gate before promotion
 ├── lib/                        # importable harness — skills import, never reimplement:
@@ -165,6 +166,7 @@ genie-code-pipeline-optimizer/
 │   ├── compute.py                  # resolve_compute + run_notebook + benchmark_on_cluster
 │   ├── sandbox.py                  # clone_targets (full/sampled) + remap_writes
 │   ├── equivalence.py              # assert_equivalent + assert_no_protocol_change
+│   ├── flow.py                     # whole-job (flow) equivalence: two-schema clone + run both DAGs + compare
 │   ├── audit.py                    # audit_log + assert_audited (no-audit-no-promote)
 │   └── promote.py                  # promote_notebook via the Jobs JSON (new job / in place)
 ├── sql/                        # tables.sql · config_function.sql · governance_views.sql

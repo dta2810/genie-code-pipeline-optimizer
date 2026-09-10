@@ -111,22 +111,40 @@ def bootstrap_from_job(job_name: str, *, spark=None, sandbox_schema: str | None 
 
 
 def sync_config(spark, cfg: dict) -> None:
-    """Persist one row per notebook to opt_config (replace this job's rows). Idempotent."""
+    """Persist one row per notebook to opt_config (replace this job's rows). Idempotent.
+
+    Explicit schema: Spark Connect can't infer types from rows with empty lists / None
+    (e.g. an un-detected notebook has source_tables=[], operation=None).
+    """
+    from pyspark.sql.types import (ArrayType, BooleanType, DoubleType, IntegerType,
+                                    StringType, StructField, StructType)
+    schema = StructType([
+        StructField("job_name", StringType()), StructField("job_id", StringType()),
+        StructField("notebook_path", StringType()), StructField("task_key", StringType()),
+        StructField("dag_order", IntegerType()), StructField("operation", StringType()),
+        StructField("source_tables", ArrayType(StringType())),
+        StructField("target_tables", ArrayType(StringType())),
+        StructField("equivalence_keys", ArrayType(StringType())),
+        StructField("sandbox_schema", StringType()), StructField("optimized_folder", StringType()),
+        StructField("epsilon", DoubleType()), StructField("min_gain", DoubleType()),
+        StructField("benchmark_runs", IntegerType()), StructField("compute_cluster_id", StringType()),
+        StructField("nondeterministic", BooleanType()), StructField("status", StringType()),
+    ])
     d, nb = cfg["defaults"], cfg["notebooks"]
     rows = [{
         "job_name": cfg["job_name"], "job_id": cfg["job_id"], "notebook_path": n["notebook_path"],
         "task_key": n.get("task_key"),
-        "dag_order": n["dag_order"], "operation": n["operation"],
-        "source_tables": n["source_tables"], "target_tables": n["target_tables"],
-        "equivalence_keys": n["equivalence_keys"], "sandbox_schema": cfg["sandbox_schema"],
-        "optimized_folder": cfg["optimized_folder"], "epsilon": d["epsilon"],
-        "min_gain": d["min_gain"], "benchmark_runs": d["benchmark_runs"],
+        "dag_order": int(n["dag_order"]), "operation": n["operation"],
+        "source_tables": n["source_tables"] or [], "target_tables": n["target_tables"] or [],
+        "equivalence_keys": n["equivalence_keys"] or [], "sandbox_schema": cfg["sandbox_schema"],
+        "optimized_folder": cfg["optimized_folder"], "epsilon": float(d["epsilon"]),
+        "min_gain": float(d["min_gain"]), "benchmark_runs": int(d["benchmark_runs"]),
         "compute_cluster_id": d.get("compute_cluster_id"),
         "nondeterministic": n["nondeterministic"], "status": n["status"],
     } for n in nb]
     table = _config_table()
     spark.sql(f"DELETE FROM {table} WHERE job_name = '{cfg['job_name']}'")
-    spark.createDataFrame(rows).write.mode("append").saveAsTable(table)
+    spark.createDataFrame(rows, schema).write.mode("append").saveAsTable(table)
 
 
 def load_config(spark, job_name: str) -> list[dict]:

@@ -24,6 +24,25 @@ Steps:
    tracking, generated columns, v2 checkpoint) — forbidden by the catalog rule and blocked by
    `assert_no_protocol_change`. For `CREATE OR REPLACE TABLE`, carry over the source table's
    TBLPROPERTIES/protocol so modern engine defaults don't silently bump it.
+   **⚠️ Partition reload — use `REPLACE WHERE`, NOT a bare `INSERT OVERWRITE`.** A bare
+   `INSERT OVERWRITE TABLE t SELECT * FROM src` is a **STATIC, full-table** overwrite by default — it
+   replaces the WHOLE table with the SELECT, silently deleting every partition not in `src`. (Verified
+   the hard way: it shrank a 40M-row / 60-day table to the 700K / 1-day reload = 39.3M rows lost, and
+   the job still ran green.) **It is NOT partition-scoped by default** — do not assume it is.
+   `spark.sql.sources.partitionOverwriteMode=dynamic` would fix it, but `spark.conf.set(...)` raises
+   `CONFIG_NOT_AVAILABLE` on serverless / Spark Connect. The correct, Spark-Connect-safe equivalent of a
+   `DELETE partitions-in-src + INSERT src` is an atomic replace scoped to the reloaded partitions —
+   **but `REPLACE WHERE` does NOT accept a subquery** (`UNSUPPORTED_FEATURE.OVERWRITE_BY_SUBQUERY`), so
+   read the partition keys FIRST and embed them as LITERALS:
+   ```python
+   days = [r[0] for r in spark.sql(f"SELECT DISTINCT FECHA_ID FROM {src}").collect()]
+   if days:
+       in_list = ",".join(str(int(d)) for d in days)   # quote if the key is a string
+       spark.sql(f"INSERT INTO {t} REPLACE WHERE FECHA_ID IN ({in_list}) SELECT * FROM {src}")
+   ```
+   Empirically verified equivalent to `DELETE+INSERT` on 40M rows / 60 partitions (0/0), no session conf.
+   The equivalence gate must compare against the FULL original table (all partitions), not just the
+   reloaded one, or it will miss this exact data-loss bug.
 4. Keep the write targets as configured so `sandbox-setup` remaps them to the sandbox.
 5. `audit_log(step="generate_v2", change_type=<list of techniques>, insight=<what changed + why faster>)`.
 

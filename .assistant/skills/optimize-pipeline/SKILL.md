@@ -136,6 +136,14 @@ Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; origina
     ```
     If this raises, the harness was bypassed (steps run inline) — re-run through the wrappers. Show
     the trail to the human as evidence.
+10b. **`@flow-validate` — WHOLE-JOB gate (mandatory before promotion).** Per-step equivalence is not
+    enough; prove the whole optimized job reproduces the original's real output. Use `run_replay` (pin the
+    inputs to when the original last ran, run ONLY the optimized job on shallow clones, compare each final
+    target to that run's recorded output) — or `run` (two-schema) when no past run is anchorable. It runs
+    on shallow clones (never prod) and audits `flow_equivalence`. If any target FAILs, STOP — do not
+    promote (`set_notebook_status(... "blocked")`). This step exists because a per-step-green `cargar_trx`
+    still shipped a static-overwrite that dropped 39.3M rows; the whole-job compare against the FULL tables
+    is what catches that.
 11. **GATE 2: wait for human approval**, then promote via the Jobs JSON (this iteration: NO PR/DAB):
     ```python
     from lib.promote import promote_notebook
@@ -146,6 +154,14 @@ Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; origina
     `new_job=False` updates the job in place. **Pass `spark`/`job_name`/`source_notebook_path`** so
     promotion also flips `opt_config.status` to `promoted` (do not update it by hand). Record the
     outcome with `audit_log(step="promote", ...)`.
+
+    **⛔ NEVER run the promoted job to "validate" it.** The promoted job's tasks point at the
+    PRODUCTION tables — running it (`run-now`, a trigger, a schedule) WRITES TO PROD and overwrites
+    the real data. Promotion only repoints the job definition; it does not run anything. To validate
+    the whole job end-to-end, use **`flow-validate`** (shallow-clone the tables at a chosen version,
+    run the optimized job against the CLONES, compare to the original run's recorded output). Actually
+    running the promoted job on prod is a **production deploy** — a separate, explicit, human-gated
+    step, never part of validation.
 
 ## Audit contract (every step)
 **Use the harness wrappers — do NOT reimplement their logic inline.** The wrappers (`lib/` +
@@ -158,9 +174,21 @@ Record job, notebook, step, status, change_type, equivalence (method + rows comp
 perf (runtime/DBU/shuffle/spill/gate), and a short NL **insight** (the *why*). Insight on every
 equivalence result, every security finding, and every failure.
 
+## Promotion preconditions (both mandatory — a green run is NOT one)
+- **Deploy-what-you-validated.** The v2 promoted must be the EXACT artifact that passed the gate. Any
+  edit to a v2 after validation — including a "hotfix" to make it run — INVALIDATES the gate and MUST
+  re-enter it (detect → sandbox → equivalence → security → benchmark). Never hotfix-then-run. (This is
+  how a `cargar_trx` static-overwrite bug shipped: the validated v2 had a conf.set; the hotfix removed it
+  and the job was re-run green without re-validating → 39.3M rows silently lost.)
+- **Flow-validate must pass before promotion**, not just per-step. `flow-validate` runs the WHOLE
+  optimized job on shallow clones and compares every final target to the original run's recorded output.
+  A SUCCESS job run is never evidence of correctness — only the equivalence assertion is.
+
 ## Guardrails
 - The baseline is the reference truth; prove the candidate equivalent **to it**.
 - Never soften `epsilon` or `min_gain` to force a pass — if a threshold is wrong, change it in
   `opt_config` with justification, not the check.
-- Never write to a production table. MERGE/UPDATE targets are cloned WITH data, never empty.
+- Never write to a production table — in EITHER loop. Per-step: MERGE/UPDATE targets are cloned WITH
+  data, never empty. Whole-job: validate via `flow-validate` on shallow clones, never by running the
+  promoted (prod-pointing) job. Running the promoted job = production deploy, gated separately.
 - Neutral wording in insights ("pipeline owner", "data engineer").
