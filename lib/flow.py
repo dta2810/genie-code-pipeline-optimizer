@@ -44,6 +44,13 @@ def _resolve_version(spark, fqn: str, when) -> int:
     return int(row[0])
 
 
+def cleanup_replay(spark, *, catalog: str, schema: str) -> None:
+    """Drop a replay/flow sandbox schema and its tables. Safe: the clones are SHALLOW, so this
+    removes only clone metadata, never prod data. Offered to the user AFTER a verdict (so they can
+    inspect first) — not run automatically."""
+    spark.sql(f"DROP SCHEMA IF EXISTS {catalog}.{schema} CASCADE")
+
+
 def prepare_flow_sandbox(spark, *, catalog: str, src_schema: str, tables: list[str],
                          orig_schema: str, opt_schema: str, sample_percent: float | None = None,
                          sample_only=None, seed: int = 42) -> dict:

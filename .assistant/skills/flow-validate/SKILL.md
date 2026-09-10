@@ -58,3 +58,9 @@ promote vs rollback. Operational failures (a job run that did not SUCCEED) RAISE
 **Scale:** full-scale on the dedicated cluster is the real proof. A sampled start (same seed both
 sides) validates the mechanism and the logic cheaply, but is a logical proof, not a volume proof —
 label it as such.
+
+**Cleanup (offer it, don't auto-run).** The verdict returns `replay_schema` (the `<src_schema>_replay`
+/ `_flow_orig` / `_flow_opt` sandbox schema of shallow clones). After showing the verdict, **suggest**
+dropping it: `flow.cleanup_replay(spark, catalog=..., schema=verdict["replay_schema"])`. It's safe
+(shallow clones → drops metadata, never prod data), but leave it to the user so they can inspect the
+clones first — do NOT drop automatically.

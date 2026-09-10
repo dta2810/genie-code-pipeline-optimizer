@@ -114,16 +114,37 @@ def job_home(job_name: str) -> str:
     return f"{WORKSPACE_HOME.rstrip('/')}/jobs/{_safe(job_name)}"
 
 
-def optimized_folder(job_name: str | None = None) -> str:
-    """Folder for generated v2 candidate notebooks. Per-job when a name is given
-    (`.../jobs/<job>/optimized`), else the shared root (back-compat)."""
-    return f"{job_home(job_name)}/optimized" if job_name else f"{WORKSPACE_HOME.rstrip('/')}/optimized"
+def optimized_folder(job_name: str) -> str:
+    """Folder for generated v2 candidate notebooks: `<WORKSPACE_HOME>/jobs/<job>/optimized`.
+    `job_name` is REQUIRED — there is no shared top-level folder (it would strand notebooks
+    outside the per-job layout, which is exactly how a stray `optimized/<other-job>` appeared)."""
+    if not job_name:
+        raise ValueError("optimized_folder requires a job_name — no shared top-level folder "
+                         "(everything a job produces lives under job_home(job_name)).")
+    return f"{job_home(job_name)}/optimized"
 
 
 def validation_folder(job_name: str) -> str:
     """Folder for the dedicated per-notebook validation notebooks (clone+run+equivalence+benchmark,
     one operation per cell) — run on the dedicated cluster, never inline in the chat turn."""
     return f"{job_home(job_name)}/validation"
+
+
+def driver_folder(job_name: str) -> str:
+    """Home for the Genie Code driver/orchestrator notebook + run traceability:
+    `<WORKSPACE_HOME>/jobs/<job>/driver`. Keeps the interactive notebook INSIDE the framework home
+    instead of a stray agent folder (e.g. `agents_governance/`), so every artifact is under one root."""
+    return f"{job_home(job_name)}/driver"
+
+
+def assert_under_home(path: str) -> str:
+    """Guard: every workspace artifact the framework writes must live under WORKSPACE_HOME. Raises
+    on a path outside it (e.g. a hard-coded or agent-default location). Returns the path if OK."""
+    home = WORKSPACE_HOME.rstrip("/")
+    if not (path == home or path.startswith(home + "/")):
+        raise ValueError(f"{path} is outside WORKSPACE_HOME ({home}) — use a settings folder helper "
+                         "(optimized_folder/validation_folder/driver_folder); never hard-code a path.")
+    return path
 
 
 def sandbox_fqn(catalog: str, schema: str, table: str) -> str:

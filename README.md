@@ -180,6 +180,26 @@ The sandbox is **schema-based**, inside each target's own catalog: a clone of
 `cat.schema.table` lands at `cat.<SANDBOX_SCHEMA>.<schema>__<table>` (`settings.sandbox_fqn`) — no
 CREATE CATALOG privilege, no cross-catalog collisions.
 
+## Workspace layout (what the optimizer creates at runtime, and where)
+
+**Everything the optimizer creates lands under `WORKSPACE_HOME`, addressed by a `settings` helper —
+never a hard-coded path, never a stray agent folder.** One root, one convention:
+
+```
+WORKSPACE_HOME/  (= genie_code_optimizer/)
+└── jobs/<job>/                         settings.job_home(job)
+    ├── optimized/   <ntb>_genie_opt_<ts>   settings.optimized_folder(job)   ← v2 candidates
+    ├── validation/  <ntb>_validate_<ts>    settings.validation_folder(job)  ← per-notebook run notebooks
+    └── driver/      the orchestrator notebook + run traceability   settings.driver_folder(job)
+UC sandbox schema:  cat.<SANDBOX_SCHEMA>.<schema>__<table>   settings.sandbox_fqn(...)   (dropped after; flow.cleanup_replay)
+UC optimizer schema: opt_config · optimization_audit · governance views · get_opt_config
+```
+
+`optimized_folder` **requires** a `job_name` (no shared top-level folder — that used to strand
+notebooks outside the per-job layout); `settings.assert_under_home(path)` RAISES on any path that
+escapes `WORKSPACE_HOME`. The Genie driver notebook, which a session may open in a default agent
+folder, is relocated under `driver/` at bootstrap so nothing framework-made lives outside the home.
+
 ## Deploy (DABs)
 
 Locations are bundle variables, overridden per target in `databricks.yml` — one target per

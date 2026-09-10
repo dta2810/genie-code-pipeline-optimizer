@@ -77,10 +77,20 @@ session, and it loses cell state if the compute restarts (this is the #1 cause o
 imports the harness (`sandbox`, `equivalence`, `audit`, `metrics`) and does clone → run v1 → run v2 →
 equivalence → benchmark, each in its own cell. You read its result, you do not run the heavy SQL in the turn.
 
-**Per-job folder layout** — everything the optimizer produces for a job lives under one folder,
-`settings.job_home(job_name)` = `<WORKSPACE_HOME>/jobs/<job_name>/`:
-- `optimized/` — v2 candidate notebooks, `<ntb>_genie_opt_<ts>` (the timestamp is the version; iterations coexist).
-- `validation/` — the dedicated run notebooks above, `<ntb>_validate_<ts>`.
+**Per-job folder layout — EVERYTHING the optimizer creates lives under one root, via a `settings`
+helper (never a hard-coded path, never outside `WORKSPACE_HOME`).** `settings.job_home(job_name)` =
+`<WORKSPACE_HOME>/jobs/<job_name>/`:
+- `optimized/` — v2 candidate notebooks, `<ntb>_genie_opt_<ts>` (`settings.optimized_folder(job)`; timestamp = version, iterations coexist).
+- `validation/` — the dedicated run notebooks, `<ntb>_validate_<ts>` (`settings.validation_folder(job)`).
+- `driver/` — this orchestrator notebook + run traceability (`settings.driver_folder(job)`).
+
+**Folder discipline (do NOT skip):** any workspace path you write comes from a `settings` helper
+(`optimized_folder`/`validation_folder`/`driver_folder`/`job_home`) or a UC name from `sandbox_fqn`;
+wrap a computed path in `settings.assert_under_home(path)` — it RAISES if it escapes `WORKSPACE_HOME`.
+**Driver notebook:** the Genie session may create this notebook in a default agent folder (e.g.
+`agents_governance/`). As part of step 0, relocate it under `settings.driver_folder(job_name)` (move
+it, or save/export a copy there) so no framework artifact is stranded outside the home. Sandbox clones
+go only to the sandbox schema and are dropped after (`flow.cleanup_replay`, offered to the user).
 Promotion creates a NEW job named `<job> (genie-opt <YYYYMMDD>)` (dated; original untouched) via `promote_notebook`.
 
 **For each SELECTED notebook (`pending_notebooks(cfg)`), in DAG order:**
