@@ -50,3 +50,43 @@
 
   Prod-safe: the jobs are re-pointed to sandbox schemas, so prod tables are never written. Until this gate
   passes on a real workload, the optimizer claims **step** equivalence only.
+
+## The gates
+
+| Gate | Type | Rule |
+|---|---|---|
+| Protocol | hard | v2 must not bump Delta minReader/minWriter or add table features (liquid clustering, deletion vectors, row tracking, generated columns, type widening). |
+| Equivalence (step) | hard | Per notebook: v2 output equals the baseline — counts, per-column fingerprint, and `EXCEPT ALL` both ways, within `epsilon`, on the full table. The baseline is the reference truth. |
+| Equivalence (flow) | hard | Whole job: the entire optimized job, run on clones, reproduces the original run's output on every final table. Step equivalence does not imply this — the DAG composes stages. |
+| Security | hard | The v2 is reviewed for secrets, injection, access or PII broadening, out-of-sandbox writes, unsafe calls, and cost blowups. |
+| Audit | hard | No promotion unless the run is fully recorded — an `opt_config` row and a succeeded row per required step. |
+| Performance | advisory | A gain below `min_gain` is a signal to you, not an automatic block. A correctness or maintainability promotion is allowed, and recorded as such. |
+
+Equivalence proves correctness; performance is a separate reading.
+
+## Guardrails — what makes the guarantee hold
+
+The promise is *ship only what's proven to produce the same result*, and it is only as good as these invariants.
+Each one closes a specific way a wrong optimization could otherwise reach production, so they are enforced by the harness and the orchestrator, not left to judgment.
+
+**Validation never writes production, so you can safely point the optimizer at a live job.**
+Every run — per-step and whole-job — executes against sandbox clones, and promotion only repoints the job definition; it runs nothing.
+
+**The gate is the only path to production, so correctness and deployment stay separate.**
+Running the promoted job (its tasks point at production) is a deploy, not a check; validation happens on clones through `flow-validate`.
+Without this split, a "let's just run it and see" writes production and bypasses the gate.
+
+**You deploy exactly what you validated, so the gate means something.**
+Any edit to a v2 after it passed — even a hotfix to make it run — re-enters the full gate.
+Otherwise the gate certifies an artifact that isn't the one that ships.
+
+**Correctness comes from the assertion, never from a green run, so silent data changes cannot pass.**
+A job that runs green can still be wrong; equivalence is checked on the full table, so a rewrite that quietly drops rows or partitions is caught instead of shipped.
+
+**The gate is never bent to pass, so the proof stays honest.**
+`epsilon` and `min_gain` are never softened; non-deterministic notebooks are flagged and excluded, not optimized blind; and rewrites stay portable — no session `spark.conf.set(...)` on serverless (it raises `CONFIG_NOT_AVAILABLE`); use `TBLPROPERTIES` or `REPLACE WHERE` instead.
+
+## Roadmap
+
+- **Loop 2 promotion via PR/DAB** — promote the proven v2 back into the job as a pull request / bundle change, with CI re-running the same equivalence + performance gate. "Deploy code, not artifacts."
+- **Optimization Command Center** — a governance dashboard over the audit views (`optimization_audit` + the governance views) showing runs, gate outcomes, and gains across jobs.

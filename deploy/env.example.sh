@@ -11,8 +11,11 @@ export PO_OPTIMIZER_SCHEMA="genie_optimizer"
 # Sandbox SCHEMA for table clones + isolated runs. Created lazily inside each target's OWN
 # catalog (no CREATE CATALOG needed). Clones are named <origschema>__<table> to avoid collision.
 export PO_SANDBOX_SCHEMA="pipeline_opt_sandbox"
-# For the LATAM Flights_Pipeline_Final job (tables in main_david_thomas), use:
-# export PO_SANDBOX_SCHEMA="genie_optimizer_v1_sandbox"
 
-# Databricks CLI profile to target.
+# Dedicated cluster for the HEAVY sandbox runs + wall-clock benchmark (control work stays serverless).
+# Empty = fall back to the serverless session (fine at sample scale; large runs may time out).
+export PO_COMPUTE_CLUSTER_ID=""
+
+# Databricks CLI profile to target — an authenticated profile from `~/.databrickscfg`
+# (create one with `databricks auth login`). This is a CLI profile, NOT a bundle target.
 export DATABRICKS_CONFIG_PROFILE="DEFAULT"
