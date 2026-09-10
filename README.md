@@ -43,10 +43,16 @@ and `lib/` imports resolve.
    │    perf-benchmark → median of N (advisory signal, not a block)
    │    security-review → secrets/injection/access/PII/out-of-sandbox/cost           ── HARD
    │    NO-AUDIT-NO-PROMOTE → assert_audited (opt_config row + every step recorded)   ── HARD
-   │    show the audit trail                                                 (GATE 2: you approve)
+   │
+   ├─ once ALL selected notebooks pass, for the whole job:
+   │    flow-validate → run the OPTIMIZED job on shallow clones (never prod) and compare       ── HARD
+   │                    every final target to the ORIGINAL run's recorded output — all
+   │                    partitions (per-step equivalence alone does NOT prove this)
+   │    show the audit trail + the flow-equivalence verdict                  (GATE 2: you approve)
    ▼
-promote via the Jobs JSON — clone the job with the task repointed to v2 (original untouched;
-rollback = delete the new job).  [PR/DAB promotion is a future iteration.]
+promote via the Jobs JSON — clone/repoint the job to v2 (original untouched; rollback = delete
+the new job).  NEVER run the promoted (prod-pointing) job to "validate" — that writes to prod;
+running it is a separate, human-gated production deploy.  [PR/DAB promotion is a future iteration.]
 ```
 
 ## The gates (what makes it safe)
@@ -54,14 +60,19 @@ rollback = delete the new job).  [PR/DAB promotion is a future iteration.]
 | Gate | Type | Rule |
 |---|---|---|
 | Protocol | HARD | v2 must not bump Delta minReader/minWriter or add table features (no liquid clustering, deletion vectors, row tracking, generated cols, type widening). |
-| Equivalence | HARD | v2 output ≡ baseline: counts + per-column fingerprint + `EXCEPT ALL` both ways, within `epsilon`. The baseline is the reference truth. |
+| Equivalence (step) | HARD | Per notebook: v2 output ≡ baseline — counts + per-column fingerprint + `EXCEPT ALL` both ways, within `epsilon`, on the FULL table (all partitions). The baseline is the reference truth. |
+| Equivalence (flow) | HARD | Whole job: the entire optimized job, run on clones, reproduces the original run's recorded output on every final target. Per-step equivalence does NOT imply this — the DAG composes stages. |
 | Security | HARD | v2 reviewed for secrets, injection, access/PII broadening, writes outside the sandbox, unsafe UDF/external calls, cost blowups. |
 | Audit | HARD | No promotion unless the run is fully recorded (opt_config row + a succeeded row per required step). |
 | Performance | **advisory** | Gain below `min_gain` is a **signal to you**, not an automatic block — a correctness/maintainability promotion is allowed and recorded as such. |
 
-Equivalence is the proof of correctness; performance is a separate reading. Prod is never at risk:
-every clone and remapped write lands in the sandbox schema, MERGE/UPDATE targets are cloned **with
-their data** (not empty), and inputs are pinned via time-travel so before/after read identical data.
+**Two levels of equivalence.** *Step* proves each notebook v2 ≡ v1 in isolation; *flow* proves the
+whole optimized job lands on the same tables as the original — both are required before promotion,
+because a per-step-green job can still be wrong once its stages compose (or once a rewrite behaves
+differently at job scale). A green job run is **never** evidence of correctness; only the equivalence
+assertion is. Equivalence proves correctness; performance is a separate reading. Prod is never at
+risk: every clone and remapped write lands in the sandbox schema, MERGE/UPDATE targets are cloned
+**with their data** (not empty), and inputs are pinned via time-travel so before/after read identical data.
 
 ## The optimization catalog is a starting set, not a cage
 
@@ -72,6 +83,48 @@ notes. But the optimizer **may also use Genie Code's own skills** (`writing-sql`
 — it names the source at GATE 1 and in the audit. Safety comes from the **gates**, not from limiting
 where a technique comes from. The only hard prohibition, regardless of source, is a protocol/feature
 bump.
+
+## Skills (what each one does)
+
+Each skill is a `SKILL.md` (Agent-Skills frontmatter) that describes *when/why*, and imports the
+matching `lib/` module via its `scripts/` for the *how* — so behavior stays consistent and testable,
+never reimplemented inline.
+
+| Skill | Role | What's in it |
+|---|---|---|
+| `optimize-pipeline` | **entry point / orchestrator** | `@optimize-pipeline` — self-contained flow (bootstrap → select → per-notebook gates → whole-job flow-validate → promote). Owns the audit contract, the two HITL gates, and the guardrails below. |
+| `detect-tables` | source/target discovery | Genie **reads** the notebook (no SQL parser) → resolves dynamic/widget table names, cross-checks UC lineage, flags non-determinism (`current_timestamp`/rand/unordered agg). HITL-confirmed. |
+| `perf-profile` | bottleneck diagnosis | Root-causes the chosen notebook from the job JSON + `system.query.history` + Delta `DESCRIBE HISTORY` (full-rewrite-vs-delta-touch, spill, row amplification); proposes the full applicable technique stack up front. |
+| `optimization-catalog` | technique recipes | 6 recipes (broadcast, skew, clustering→Z-ORDER, small-files, de-UDF, incremental-MV): symptom → detection → before/after → equivalence-risk tier → guard. A starting set, not a cage. |
+| `optimize-notebook` | generate v2 | Writes `<ntb>_genie_opt_<ts>` (never edits the original). Enforces no protocol bump and Spark-Connect-safe rewrites — e.g. a partition reload uses `INSERT … REPLACE WHERE <keys>` with **literal** keys, never a bare `INSERT OVERWRITE` (which is a static full-table overwrite that drops other partitions). |
+| `sandbox-setup` | isolation | Shallow-clone targets WITH data, pin inputs (time-travel), remap ALL writes to the sandbox schema, verify no prod ref remains; sampled-vs-full tier per operation. |
+| `equivalence-check` | **step gate** (HARD) | Per notebook: counts → fingerprint → `EXCEPT ALL` both ways, on the FULL table, epsilon by risk tier. RAISES on divergence. |
+| `flow-validate` | **flow gate** (HARD) | Whole job: replay the optimized job on clones from a real past run's inputs and compare each final target to that run's recorded output (or two-schema A/B). Catches composition/scale bugs a step gate can't. |
+| `perf-benchmark` | perf reading (advisory) | Median of N on the dedicated cluster; separates equivalence (proof) from perf (signal); on serverless reports structural I/O, not contaminated wall-clock. |
+| `security-review` | **late security gate** (HARD) | v2 reviewed for secrets, injection, access/PII broadening, out-of-sandbox writes, unsafe calls, cost blowups. Any finding blocks promotion. |
+
+## Guardrails (what makes the guarantee hold)
+
+The framework's promise — *ship only what's proven to produce the same result* — is only as good as
+these invariants. Each one closes a specific way a wrong optimization could otherwise reach prod, so
+they are enforced by the harness and the orchestrator, not left to judgment.
+
+- **Validation never writes prod → you can safely point it at a live job.** Every run (per-step and
+  whole-job) executes against sandbox clones; promotion only repoints the job definition, it runs
+  nothing. This is what lets the optimizer work against a real pipeline without risk.
+- **The gate is the *only* path to prod → correctness and deployment stay separate.** Running the
+  promoted job (its tasks point at prod) is a deploy, not a check; validation happens on clones via
+  `flow-validate`. Without this split, a "let's just run it and see" writes prod and bypasses the gate.
+- **Deploy exactly what you validated → the gate actually means something.** Any edit to a v2 after it
+  passed — even a hotfix to make it run — re-enters the full gate. Otherwise the gate certifies an
+  artifact that isn't the one that ships.
+- **Correctness comes from the assertion, never from a green run → silent data changes can't pass.**
+  A job that runs green can still be wrong; equivalence is checked on the FULL table (all partitions),
+  so a rewrite that quietly drops rows/partitions is caught instead of shipped.
+- **The gate is never bent to pass → the proof stays honest.** `epsilon`/`min_gain` are never softened;
+  non-deterministic notebooks are flagged and excluded, not optimized blind; and rewrites stay portable
+  (no session `spark.conf.set(...)` on serverless — `CONFIG_NOT_AVAILABLE`; use `TBLPROPERTIES` /
+  `REPLACE WHERE`).
 
 ## Compute (where the heavy work runs)
 
@@ -144,6 +197,20 @@ databricks bundle run provision_optimizer -t latam   # creates schema + tables +
 `opt_config`). A new environment = copy the `latam` target block and set its `optimizer_catalog` /
 `optimizer_schema` / `sandbox_schema` / `compute_cluster_id` / `profile`.
 
+**Incremental code-only updates — prefer `sync_assets.sh`.** For pushing edited skills / `lib` to an
+existing deployment without re-provisioning, use `import-dir --overwrite`, which only adds/overwrites
+the dirs it copies:
+
+```bash
+source deploy/env.sh && bash deploy/sync_assets.sh   # imports .assistant, lib, deploy, sql to WORKSPACE_HOME
+```
+
+Use it instead of `bundle deploy` when the optimizer has already produced runtime artifacts under
+`WORKSPACE_HOME` (the per-job `jobs/<job>/optimized/*` and `validation/*` notebooks a promoted job
+points at): `bundle deploy` mirror-syncs `file_path` and can **prune** workspace files that aren't in
+the repo, whereas `import-dir --overwrite` never deletes. Re-run `provision_optimizer` only when
+`sql/` or the `opt_config` schema changed.
+
 ## Repo layout
 
 ```
@@ -178,7 +245,11 @@ genie-code-pipeline-optimizer/
 
 ## Status
 
-Harness v1 built and **deployed on a live workspace**: full flow runs end-to-end (detect → profile →
-GATE 1 → v2 → sandbox → protocol + equivalence + security + audit gates → GATE 2 → promote via new
-job). Governed dedicated compute wired. Multi-notebook selection supported. See `docs/` and the
-project tracker for the current backlog.
+Harness built and **deployed on a live workspace**: the full flow runs end-to-end (detect → profile →
+GATE 1 → v2 → sandbox → protocol + step-equivalence + security + audit → **flow-validate** → GATE 2 →
+promote). Both equivalence levels are in: **step** (per notebook) and **flow** (whole job, replay
+against a real past run's recorded output, or two-schema A/B) — the flow harness is smoke-tested
+end-to-end (catches a static-overwrite that drops partitions, passes the partition-scoped fix).
+Governed dedicated compute and multi-notebook selection are wired. Next: PR/DAB promotion (Loop 2,
+CI re-runs the same gate) and the Optimization Command Center dashboard over the governance views.
+See `docs/architecture.md` for the two-loops design and the project tracker for the backlog.
