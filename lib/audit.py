@@ -13,6 +13,65 @@ def _str_map(d):
     return {str(k): (None if v is None else str(v)) for k, v in d.items()}
 
 
+def _truthy(v):
+    return v if isinstance(v, bool) else str(v).strip().lower() in ("true", "passed", "pass", "1", "yes")
+
+
+def _norm_change_type(ct):
+    """ARRAY<STRING> — accept a list OR a comma-joined string. Never `list("abc")` char-explode
+    (the #1 audit bug: a string arg iterated char-by-char). Returns a clean list or None.
+    """
+    if not ct:
+        return None
+    parts = ([t.strip() for t in ct.split(",")] if isinstance(ct, str)
+             else [str(t).strip() for t in ct])
+    return [p for p in parts if p] or None
+
+
+def _canonical_equivalence(m):
+    """Guarantee the key the scorecard reads (`result`); derive it from `passed` if only that exists.
+    Lets an inline caller that used a different key still surface in v_optimization_scorecard.
+    """
+    if not m:
+        return m
+    m = dict(m)
+    if "result" not in m and "passed" in m:
+        m["result"] = "passed" if _truthy(m["passed"]) else "failed"
+    return m
+
+
+def _canonical_perf(m):
+    """Guarantee the keys the scorecard reads (`gain`, `passed`); accept common aliases."""
+    if not m:
+        return m
+    m = dict(m)
+    if "gain" not in m and "gain_pct" in m:
+        m["gain"] = m["gain_pct"]
+    if "passed" not in m and "result" in m:
+        m["passed"] = _truthy(m["result"])
+    return m
+
+
+def equivalence_map(*, passed, risk_tier=None, **detail):
+    """Build a canonical equivalence audit map (always has `result`). Prefer this over a raw dict."""
+    m = {"result": "passed" if _truthy(passed) else "failed"}
+    if risk_tier is not None:
+        m["risk_tier"] = risk_tier
+    m.update(detail)
+    return m
+
+
+def perf_map(*, gain, passed, before_s=None, after_s=None, **detail):
+    """Build a canonical perf audit map (always has `gain` + `passed`). Prefer this over a raw dict."""
+    m = {"gain": gain, "passed": _truthy(passed)}
+    if before_s is not None:
+        m["before_s"] = before_s
+    if after_s is not None:
+        m["after_s"] = after_s
+    m.update(detail)
+    return m
+
+
 def audit_log(spark, *, job, notebook, step, status, change_type=None,
               equivalence=None, perf=None, notebook_path=None, insight=None):
     """Append one audit event. status in {started, succeeded, failed}."""
@@ -40,8 +99,9 @@ def audit_log(spark, *, job, notebook, step, status, change_type=None,
         "audit_id": str(uuid.uuid4()),
         "event_ts": datetime.now(timezone.utc),
         "user": user, "job": job, "notebook": notebook, "step": step, "status": status,
-        "change_type": list(change_type) if change_type else None,
-        "equivalence": _str_map(equivalence), "perf": _str_map(perf),
+        "change_type": _norm_change_type(change_type),
+        "equivalence": _str_map(_canonical_equivalence(equivalence)),
+        "perf": _str_map(_canonical_perf(perf)),
         "notebook_path": notebook_path, "insight": insight,
     }
     spark.createDataFrame([row], schema).write.mode("append").saveAsTable(

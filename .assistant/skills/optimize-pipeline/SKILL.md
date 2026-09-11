@@ -183,6 +183,10 @@ perf_profile, generate_v2, sandbox_setup, equivalence, perf_benchmark, security_
 Record job, notebook, step, status, change_type, equivalence (method + rows compared + result),
 perf (runtime/DBU/shuffle/spill/gate), and a short NL **insight** (the *why*). Insight on every
 equivalence result, every security finding, and every failure.
+**Audit contract (so `v_optimization_scorecard` fills in):** `change_type` is a **list**; the
+equivalence map has key **`result`** (`passed`/`failed`); the perf map has keys **`gain`** and
+**`passed`**. Prefer the builders `audit.equivalence_map(passed=…)` / `audit.perf_map(gain=…, passed=…)`,
+which emit the canonical keys — do not hand-roll maps with ad-hoc key names.
 
 ## Promotion preconditions (both mandatory — a green run is NOT one)
 - **Deploy-what-you-validated.** The v2 promoted must be the EXACT artifact that passed the gate. Any

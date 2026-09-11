@@ -24,8 +24,10 @@ AS WITH a AS (
    )
    SELECT
      c.job_name AS job, c.notebook_path AS notebook, c.status AS config_status,
-     eq.equivalence['result'] AS equivalence_result,
-     pf.perf['gain'] AS perf_gain, pf.perf['passed'] AS perf_passed,
+     -- COALESCE across canonical + common alias keys so a variant/inline-written row still surfaces.
+     COALESCE(eq.equivalence['result'], eq.equivalence['passed']) AS equivalence_result,
+     COALESCE(pf.perf['gain'], pf.perf['gain_pct']) AS perf_gain,
+     COALESCE(pf.perf['passed'], pf.perf['result']) AS perf_passed,
      GREATEST(COALESCE(eq.event_ts, TIMESTAMP('1970-01-01')),
               COALESCE(pf.event_ts, TIMESTAMP('1970-01-01'))) AS last_event_ts
    FROM {{catalog}}.{{schema}}.opt_config c

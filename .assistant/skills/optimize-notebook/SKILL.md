@@ -45,5 +45,7 @@ Steps:
    reloaded one, or it will miss this exact data-loss bug.
 4. Keep the write targets as configured so `sandbox-setup` remaps them to the sandbox.
 5. `audit_log(step="generate_v2", change_type=<list of techniques>, insight=<what changed + why faster>)`.
+   `change_type` MUST be a Python **list** (e.g. `["remove-redundant-count", "sql-native-ctas"]`), never a
+   comma-joined string. (audit_log now splits a string defensively, but pass a list.)
 
 Output: the v2 notebook path, ready for sandbox-setup → run → equivalence-check → perf-benchmark.
