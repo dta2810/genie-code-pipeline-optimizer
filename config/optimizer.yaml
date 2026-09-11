@@ -1,4 +1,5 @@
 # Deploy config for the Genie Code Pipeline Optimizer — the ONE file the deploy reads.
+# Edit the placeholders below (<...>) for your environment, then launch.
 #
 # Launch it two ways (both call provision() via spark, entirely inside Databricks):
 #   - Manual:      open deploy/00_deploy.py and Run All (widgets pre-fill from here).
@@ -7,11 +8,11 @@
 # This provisions ONLY the optimizer UC assets (schema + tables + views + get_opt_config) and
 # writes the runtime config file. It does NOT push the code (.assistant/skills, lib, sql) into the
 # workspace — that one-time bootstrap is a file sync (CLI import-dir) or, simplest, adding this repo
-# as a Databricks Git folder; see docs/deploy.md. Edit the values below for your environment.
+# as a Databricks Git folder; see docs/deploy.md.
 
-optimizer_catalog: dt_serverless_stable_isqgt5_catalog  # UC catalog that holds the optimizer schema
-optimizer_schema:  genie_code_optimizer                 # optimizer schema (opt_config, optimization_audit, views)
-sandbox_schema:    genie_code_optimizer_sandbox         # dedicated clone/sandbox schema (created lazily per target catalog)
-compute_cluster_id:                                     # dedicated cluster for heavy sandbox runs + benchmark (empty = serverless)
-workspace_home:    /Workspace/Users/david.thomas@databricks.com/genie_optimizer/genie-code-pipeline-optimizer  # where the assets live
-create_catalogs:   false                                # true only if the catalog doesn't exist and you have CREATE CATALOG
+optimizer_catalog: <your_catalog>                 # UC catalog that holds the optimizer schema
+optimizer_schema:  genie_code_optimizer           # optimizer schema (opt_config, optimization_audit, views)
+sandbox_schema:    genie_code_optimizer_sandbox   # dedicated clone/sandbox schema (created lazily per target catalog)
+compute_cluster_id:                               # dedicated cluster for heavy sandbox runs + benchmark (empty = serverless)
+workspace_home:    /Workspace/Users/<your_user>/genie-code-pipeline-optimizer  # where the assets live
+create_catalogs:   false                          # true only if the catalog doesn't exist and you have CREATE CATALOG
