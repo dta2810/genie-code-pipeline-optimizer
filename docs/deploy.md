@@ -1,56 +1,21 @@
 # Deploy
 
+Deploy has **two halves**, and they run in different places:
+
+1. **Get the code into the workspace** — the `.assistant/skills`, `lib/`, `sql/`, `deploy/` files must physically live at your `WORKSPACE_HOME` so Genie Code auto-loads the skills and the `lib/` imports resolve. This is a **file sync from outside** the workspace (CLI or a Git folder). It is a **one-time bootstrap** (re-run only when you edit skills or `lib`).
+
+2. **Provision the optimizer UC assets** — schema, `opt_config`, `optimization_audit`, `get_opt_config`, governance views, plus the runtime config file. This runs **entirely inside Databricks** via `spark`, driven by **`config/optimizer.yaml`**. Launch it manually or from Genie Code — no DABs, no CLI.
+
 ## Prerequisites
 
-- The **Databricks CLI** installed and on your PATH (`databricks --version`).
+- The **Databricks CLI** on your PATH (`databricks --version`) with an authenticated profile (`databricks auth login`, lands in `~/.databrickscfg`) — needed only for the one-time code bootstrap in step 1 (a Git folder avoids even this).
+- Permission to create a schema in your optimizer catalog, write under your `WORKSPACE_HOME`, and submit job runs on the dedicated cluster.
 
-- An **authenticated CLI profile** for your workspace, created with `databricks auth login` (it lands in `~/.databrickscfg`). Everything below refers to that profile as `<profile>`.
+## 1. Bootstrap the code into the workspace (one-time)
 
-- Permission in the workspace to create a schema in your optimizer catalog, write under your `WORKSPACE_HOME`, and submit job runs on the dedicated cluster.
+Pick one. Both land the code at `WORKSPACE_HOME` with **no `/files` subdir** so Genie Code finds `.assistant/skills` and `lib/` imports resolve.
 
-## Target vs. profile (they are not the same thing)
-
-A **bundle target** is an environment defined in `databricks.yml` under `targets:`. It carries the per-environment variable overrides and points at a CLI profile. `-t <target>` selects it.
-
-A **CLI profile** is the workspace host + credentials in `~/.databrickscfg`.
-
-The repo ships one example target named `latam` that uses the profile `LATAM`. Rename it (or add your own target block) for your environment — see "A new environment" below. When a command shows `-t <target>`, substitute your target name.
-
-## Deploy with DABs (recommended, cross-platform)
-
-`bundle` is pure CLI, so this path works the same on Windows, macOS, and Linux. Locations are bundle variables, overridden per target in `databricks.yml` — one target per environment, no code edits.
-
-```bash
-databricks bundle validate --strict -t <target>
-databricks bundle deploy -t <target>                    # syncs skills + lib + sql + deploy to WORKSPACE_HOME
-databricks bundle run provision_optimizer -t <target>   # creates schema + tables + views + get_opt_config
-```
-
-`deploy` lands the code at `WORKSPACE_HOME` (no `/files` subdir) so Genie Code auto-loads `.assistant/skills` and the `lib/` imports resolve.
-
-`provision_optimizer` runs `deploy/00_deploy.py`, which is idempotent (`CREATE … IF NOT EXISTS` / `OR REPLACE`, and it ALTERs new columns onto an existing `opt_config`). Run it only on first deploy or when `sql/` or the `opt_config` schema changed.
-
-The bundle reads its configuration from `databricks.yml` (the target's variables), **not** from `deploy/env.sh` — that file is for the manual path below.
-
-## Incremental code-only updates
-
-To push edited skills or `lib` to an existing deployment without re-provisioning, sync the asset directories with `import-dir --overwrite` — it adds and overwrites only the dirs it copies and never prunes, so it is safe over the per-job runtime artifacts (`jobs/<job>/optimized|validation|driver`). Prefer this over `bundle deploy` once the optimizer has produced those artifacts, because `bundle deploy` mirror-syncs and can prune workspace files that aren't in the repo.
-
-First set where things live (copy the template, fill it in, and source it):
-
-```bash
-cp deploy/env.example.sh deploy/env.sh   # then edit deploy/env.sh — at least PO_WORKSPACE_HOME + DATABRICKS_CONFIG_PROFILE
-source deploy/env.sh
-```
-
-Then run the sync — pick the one for your OS:
-
-```bash
-python deploy/sync_assets.py     # any OS (Windows / macOS / Linux) — needs Python + the CLI
-bash   deploy/sync_assets.sh     # macOS / Linux only
-```
-
-Both do the same four `databricks workspace import-dir` calls. If you'd rather not use a script at all, run them directly (cross-platform) — this is the Windows-without-bash path:
+**CLI `import-dir`** (cross-platform, no bash):
 
 ```
 databricks workspace import-dir .assistant  <WORKSPACE_HOME>/.assistant --overwrite --profile <profile>
@@ -59,9 +24,56 @@ databricks workspace import-dir deploy       <WORKSPACE_HOME>/deploy     --overw
 databricks workspace import-dir sql          <WORKSPACE_HOME>/sql        --overwrite --profile <profile>
 ```
 
+`import-dir --overwrite` adds and overwrites only the dirs it copies and **never prunes**, so it is safe over the per-job runtime artifacts (`jobs/<job>/optimized|validation|driver`). Re-run it whenever you edit skills or `lib`.
+
+**Or a Git folder** — add the repo as a workspace Git folder (needs a remote); `git pull` in the folder updates the code with no CLI. Keep `WORKSPACE_HOME` (where runtime artifacts are written) separate from the Git folder so generated notebooks don't dirty the working tree.
+
+## 2. Provision the optimizer UC assets — `config/optimizer.yaml` (default)
+
+Edit **`config/optimizer.yaml`** (catalog, schema, sandbox schema, cluster, workspace home). Then launch it either way — both call `provision()` via `spark`, entirely inside Databricks:
+
+- **Manual** — open `deploy/00_deploy.py` and **Run All**. The widgets pre-fill from `config/optimizer.yaml`; override in the widgets if you want.
+- **From Genie Code** —
+
+  ```python
+  from provision import deploy_from_yaml
+  deploy_from_yaml(spark)
+  ```
+
+Idempotent (`CREATE … IF NOT EXISTS` / `OR REPLACE`, and it ALTERs new columns onto an existing `opt_config`). Run it on first deploy or when `sql/` or the `opt_config` schema changed. It also writes the runtime config file `~/.genie_optimizer.json` so the harness needs no process env.
+
+Verify:
+
+```sql
+SELECT table_name, table_type
+FROM <catalog>.information_schema.tables
+WHERE table_schema = '<optimizer_schema>' ORDER BY table_type, table_name;
+```
+
+## Alternatives (optional): DABs and sync scripts
+
+The DABs bundle and the shell/Python sync scripts still ship in the repo, but they are **optional** — the `config/optimizer.yaml` path above is the default.
+
+**DABs** — pure CLI, cross-platform. Locations are bundle variables in `databricks.yml`, overridden per target (mirror `config/optimizer.yaml`).
+
+```bash
+databricks bundle validate --strict -t <target>
+databricks bundle deploy -t <target>                    # syncs code to WORKSPACE_HOME (mirror-sync, can prune)
+databricks bundle run provision_optimizer -t <target>   # runs deploy/00_deploy.py
+```
+
+Note: `bundle deploy` mirror-syncs and **can prune** workspace files not in the repo — prefer `import-dir --overwrite` (step 1) once the optimizer has produced per-job runtime artifacts.
+
+**Sync scripts** — thin wrappers over the four `import-dir` calls in step 1. Copy `deploy/env.example.sh` to `deploy/env.sh` (gitignored), fill in `PO_WORKSPACE_HOME` + `DATABRICKS_CONFIG_PROFILE`, then:
+
+```bash
+python deploy/sync_assets.py     # any OS (needs Python + the CLI)
+bash   deploy/sync_assets.sh     # macOS / Linux only
+```
+
 ## A new environment
 
-Copy the `latam` target block in `databricks.yml` to a new name and set its `optimizer_catalog`, `optimizer_schema`, `sandbox_schema`, `compute_cluster_id`, and `profile`. Then `databricks bundle deploy -t <your-target>`. See [configuration.md](configuration.md) for what each variable means and how settings are resolved at runtime.
+Edit `config/optimizer.yaml` for the new catalog/schema/cluster and re-run step 2 (after the step-1 bootstrap against that workspace's profile). If you use DABs instead, copy the `latam` target block in `databricks.yml` to a new name and set its variables + `profile`. See [configuration.md](configuration.md) for what each variable means and how settings resolve at runtime.
 
 ## Repo layout
 
@@ -89,8 +101,9 @@ genie-code-pipeline-optimizer/
 │   ├── audit.py                    audit_log + assert_audited (no-audit-no-promote)
 │   └── promote.py                  promote_notebook via the Jobs JSON (new job / in place)
 ├── sql/                        tables.sql · config_function.sql · governance_views.sql
-├── deploy/                     provision.py · 00_deploy.py · sync_assets.py · sync_assets.sh · env.example.sh
-├── resources/                  provision_optimizer.job.yml (DABs job)
-├── databricks.yml              bundle vars + per-target overrides
+├── config/                     optimizer.yaml (deploy config) · example_job.yaml (per-job opt_config reference)
+├── deploy/                     provision.py (deploy_from_yaml) · 00_deploy.py · sync_assets.py · sync_assets.sh · env.example.sh
+├── resources/                  provision_optimizer.job.yml (optional DABs job)
+├── databricks.yml              optional DABs bundle + per-target overrides
 └── docs/                       architecture · skills · configuration · deploy
 ```

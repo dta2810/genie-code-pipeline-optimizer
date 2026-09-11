@@ -22,6 +22,42 @@ def _sql_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sql"))
 
 
+def _default_yaml() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "optimizer.yaml"))
+
+
+def load_yaml_config(path: str | None = None) -> dict:
+    """Read the deploy config (config/optimizer.yaml by default). Empty dict if the file is absent."""
+    import yaml
+    path = path or _default_yaml()
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def deploy_from_yaml(spark, path: str | None = None) -> dict:
+    """One-command deploy driven by config/optimizer.yaml. Runs entirely in Databricks (spark).
+
+    Manual:      open deploy/00_deploy.py and Run All.
+    Genie Code:  from provision import deploy_from_yaml; deploy_from_yaml(spark)
+    """
+    cfg = load_yaml_config(path)
+    # An empty yaml scalar (e.g. `compute_cluster_id:`) parses to None; `or DEFAULTS[...]` keeps it
+    # from becoming the string "None" downstream (which would break the serverless fallback).
+    def _s(key):
+        return cfg.get(key) or DEFAULTS[key]
+    return provision(
+        spark,
+        optimizer_catalog=_s("optimizer_catalog"),
+        optimizer_schema=_s("optimizer_schema"),
+        sandbox_schema=_s("sandbox_schema"),
+        compute_cluster_id=_s("compute_cluster_id"),
+        workspace_home=cfg.get("workspace_home") or None,
+        create_catalogs=bool(cfg.get("create_catalogs", False)),
+    )
+
+
 def _split_statements(sql: str) -> list[str]:
     """Split a .sql file into executable statements. Strips `--` line comments FIRST so a
     semicolon inside a comment never splits a statement (our DDL has no `--` inside literals),
@@ -47,6 +83,10 @@ def provision(spark, *,
     resolved config to the user's runtime config file so the harness needs no process env.
     """
     sql_dir = sql_dir or _sql_dir()
+    # Normalize a missing cluster to "" so resolve_compute falls back to serverless (a stray "None"
+    # string — e.g. from str(None) in a widget prefill — would otherwise look like a real cluster id).
+    if str(compute_cluster_id).strip().lower() in ("", "none"):
+        compute_cluster_id = ""
 
     # Guard against a duplicate optimizer: if opt_config already exists elsewhere, point at it.
     target = f"{optimizer_catalog}.{optimizer_schema}"

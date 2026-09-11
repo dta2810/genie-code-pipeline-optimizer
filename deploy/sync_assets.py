@@ -20,7 +20,7 @@ profile = os.environ.get("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
 repo = Path(__file__).resolve().parent.parent
 
 print(f"Syncing {repo} -> {home}  (profile: {profile})")
-for d in (".assistant", "lib", "deploy", "sql"):
+for d in (".assistant", "lib", "deploy", "sql", "config"):
     print(f"  - {d}/")
     subprocess.run(
         ["databricks", "workspace", "import-dir", str(repo / d), f"{home}/{d}",

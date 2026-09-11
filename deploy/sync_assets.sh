@@ -11,7 +11,7 @@ PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Syncing $REPO -> $HOME_PATH  (profile: $PROFILE)"
-for d in .assistant lib deploy sql; do
+for d in .assistant lib deploy sql config; do
   echo "  · $d/"
   databricks workspace import-dir "$REPO/$d" "$HOME_PATH/$d" --overwrite --profile "$PROFILE"
 done
